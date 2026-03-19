@@ -1,0 +1,20 @@
+flink:
+  version: 1.18
+  jobmanager:
+    host: flink-jobmanager
+    port: 8081
+  parallelism: 2
+  checkpointing:
+    enabled: true
+    interval: 60000
+    externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+
+catalog:
+  iceberg:
+    type: icebergs
+    # 使用 Nessie 作为 Iceberg catalog URI（与 docker-compose 中 nessie 服务对应）
+    uri: http://nessie:19120
+    warehouse: s3://finboss/warehouse
+    s3.endpoint: http://minio:9000
+    s3.access-key: minioadmin
+    s3.secret-key: minioadmin

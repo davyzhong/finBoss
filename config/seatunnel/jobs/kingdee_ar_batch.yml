@@ -1,0 +1,38 @@
+# config/seatunnel/jobs/kingdee_ar_batch.yml
+# SeaTunnel 批量作业：从金蝶 MSSQL 拉取历史存量数据
+env:
+  job.mode: BATCH
+  job.name: kingdee_ar_batch
+  parallelism: 2
+  checkpoint.interval: 60000
+
+source:
+  Jdbc:
+    result_table_name: "kingdee_ar_verify"
+    driver: net.sourceforge.jtds.jdbc.Driver
+    url: "jdbc:jtds:sqlserver://${env.KINGDEE_DB_HOST}:${env.KINGDEE_DB_PORT};databaseName=${env.KINGDEE_DB_NAME}"
+    user: "${env.KINGDEE_DB_USER}"
+    password: "${env.KINGDEE_DB_PASSWORD}"
+    query: |
+      SELECT
+        FID as fid, FBILLNO as fbillno, FDATE as fdate,
+        FCUSTID as fcustid, FCUSTNAME as fcustname,
+        FBILLAMOUNT as fbillamount, FPAYMENTAMOUNT as fpaymentamount,
+        FALLOCATEAMOUNT as fallocateamount, FUNALLOCATEAMOUNT as funallocateamount,
+        FSTATUS as fstatus, FCOMPANYID as fcompanyid,
+        FDOCUMENTSTATUS as fdocumentstatus, FCREATORID as fcreatorid,
+        FCREATEDATE as fcreatedate
+      FROM t_ar_verify
+      WHERE FDATE >= '2024-01-01'
+
+sink:
+  Iceberg:
+    catalog_name: "finboss"
+    namespace: "raw_kingdee"
+    table: "ar_verify"
+    warehouse: "s3://finboss/warehouse"
+    s3.endpoint: "http://minio:9000"
+    s3.access-key: "minioadmin"
+    s3.secret-key: "minioadmin"
+    s3.path.style.access: true
+    file.format: "parquet"

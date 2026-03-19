@@ -1,0 +1,23 @@
+# config/dbt/profiles.yml
+# 注意：此文件放在 ~/.dbt/profiles.yml 或通过 DBT_PROFILES_DIR 环境变量指定
+finboss:
+  target: dev
+  outputs:
+    dev:
+      type: doris
+      host: doris-fe
+      port: 9030
+      user: root
+      password: ""
+      database: finboss
+      schema: dm
+      threads: 4
+    prod:
+      type: doris
+      host: doris-fe
+      port: 9030
+      user: root
+      password: ""
+      database: finboss
+      schema: dm
+      threads: 8

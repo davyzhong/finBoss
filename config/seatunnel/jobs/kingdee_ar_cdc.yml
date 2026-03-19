@@ -1,0 +1,39 @@
+# config/seatunnel/jobs/kingdee_ar_cdc.yml
+# SeaTunnel CDC 作业：从金蝶 MSSQL 监听增量变更
+env:
+  job.mode: STREAMING
+  job.name: kingdee_ar_cdc
+  parallelism: 1
+  checkpoint.interval: 10000
+  sys.env:
+    TZ: Asia/Shanghai
+
+source:
+  JdbcCdc:
+    result_table_name: "kingdee_ar_verify"
+    catalog:
+      factory: mssql
+      port: 1433
+      hostname: "${env.KINGDEE_DB_HOST}"
+      username: "${env.KINGDEE_DB_USER}"
+      password: "${env.KINGDEE_DB_PASSWORD}"
+      database: "${env.KINGDEE_DB_NAME}"
+    base-url: "jdbc:jtds:sqlserver://${env.KINGDEE_DB_HOST}:${env.KINGDEE_DB_PORT};databaseName=${env.KINGDEE_DB_NAME}"
+    table-names:
+      - "${env.KINGDEE_DB_NAME}.dbo.t_ar_verify"
+    startup.mode: initial
+    debezium:
+      include.schema.changes: false
+      snapshot.mode: when_needed
+
+sink:
+  Iceberg:
+    catalog_name: "finboss"
+    namespace: "raw_kingdee"
+    table: "ar_verify"
+    warehouse: "s3://finboss/warehouse"
+    s3.endpoint: "http://minio:9000"
+    s3.access-key: "minioadmin"
+    s3.secret-key: "minioadmin"
+    s3.path.style.access: true
+    file.format: "parquet"
