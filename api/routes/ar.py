@@ -123,8 +123,15 @@ async def check_ar_quality(
         质量检查结果
     """
     try:
-        # 这里简化实现，实际应从元数据服务获取最新更新时间
-        latest_update = datetime.now()
+        # 从目标表查询实际的最新 ETL 时间
+        try:
+            latest_update = data_service.get_latest_etl_time(request.table_name)
+        except Exception:
+            # 如果无法获取，抛出明确的错误
+            raise HTTPException(
+                status_code=400,
+                detail=f"无法获取表 {request.table_name} 的最新更新时间，请确认表是否存在",
+            )
 
         # 及时性检查
         timeliness_result = quality_service.check_timeliness(

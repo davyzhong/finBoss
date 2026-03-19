@@ -1,5 +1,6 @@
 # services/data_service.py
 """数据查询服务"""
+from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy import create_engine, text
@@ -98,7 +99,7 @@ class DataService:
         if stat_date:
             sql += " AND stat_date = :stat_date"
             params["stat_date"] = stat_date
-        sql += " ORDER BY stat_date DESC, company_code"
+        sql += " ORDER BY stat_date DESC, company_code LIMIT 1000"
         return self.execute_query(sql, params)
 
     def get_customer_ar(
@@ -133,16 +134,33 @@ class DataService:
             FROM dm.dm_customer_ar
             WHERE 1=1
         """
-        params: dict[str, Any] = {"limit": limit}
+        params: dict[str, Any] = {}
         if customer_code:
             sql += " AND customer_code = :customer_code"
             params["customer_code"] = customer_code
         if is_overdue is not None:
             sql += " AND overdue_count > 0" if is_overdue else " AND overdue_count = 0"
-        sql += " ORDER BY overdue_amount DESC LIMIT :limit"
+        # LIMIT 在 MySQL/Doris 中不支持绑定参数，直接拼接（limit 已由 FastAPI 校验为 int）
+        sql += f" ORDER BY overdue_amount DESC LIMIT {int(limit)}"
         return self.execute_query(sql, params)
 
-    def get_ar_detail(
+    def get_latest_etl_time(self, table_name: str) -> datetime:
+        """获取表的最新 ETL 时间
+
+        Args:
+            table_name: 表名（如 'std.std_ar'）
+
+        Returns:
+            最新 ETL 时间
+        """
+        sql = f"SELECT MAX(etl_time) as latest_etl_time FROM {table_name}"
+        result = self.execute_query(sql)
+        if not result:
+            return datetime.now()
+        latest = result[0].get("latest_etl_time")
+        if latest is None:
+            return datetime.now()
+        return latest
         self,
         bill_no: Optional[str] = None,
         customer_code: Optional[str] = None,
@@ -186,7 +204,7 @@ class DataService:
             FROM std.std_ar
             WHERE 1=1
         """
-        params: dict[str, Any] = {"limit": limit}
+        params: dict[str, Any] = {}
         if bill_no:
             sql += " AND bill_no = :bill_no"
             params["bill_no"] = bill_no
@@ -199,5 +217,6 @@ class DataService:
         if is_overdue is not None:
             sql += " AND is_overdue = :is_overdue"
             params["is_overdue"] = is_overdue
-        sql += " ORDER BY bill_date DESC LIMIT :limit"
+        # LIMIT 在 MySQL/Doris 中不支持绑定参数，直接拼接（limit 已由 FastAPI 校验为 int）
+        sql += f" ORDER BY bill_date DESC LIMIT {int(limit)}"
         return self.execute_query(sql, params)

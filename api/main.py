@@ -31,10 +31,11 @@ def create_app() -> FastAPI:
     )
 
     # CORS 配置
+    # Phase 1: 允许所有来源（内部使用）；后续接入认证后改为白名单
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

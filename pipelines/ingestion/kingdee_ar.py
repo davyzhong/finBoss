@@ -27,15 +27,19 @@ class KingdeeARIngester:
         if end_date is None:
             end_date = datetime.now()
 
-        query = f"""
+        query = """
             SELECT * FROM t_ar_verify
-            WHERE FDATE >= '{start_date.strftime('%Y-%m-%d')}'
-              AND FDATE <= '{end_date.strftime('%Y-%m-%d')}'
+            WHERE FDATE >= :start_date
+              AND FDATE <= :end_date
             ORDER BY FDATE DESC
         """
+        params = {
+            "start_date": start_date.strftime('%Y-%m-%d'),
+            "end_date": end_date.strftime('%Y-%m-%d'),
+        }
         logger.info(f"Ingesting AR data from {start_date} to {end_date}")
         with self.connector:
-            for row in self.connector.fetch(query):
+            for row in self.connector.fetch(query, params=params):
                 yield KingdeeARVerify(**row)
 
     def ingest_incremental(
@@ -43,12 +47,13 @@ class KingdeeARIngester:
         last_sync_time: datetime,
     ) -> Iterator[KingdeeARVerify]:
         """增量接入 AR 数据"""
-        query = f"""
+        query = """
             SELECT * FROM t_ar_verify
-            WHERE FMODIFYDATE >= '{last_sync_time.strftime('%Y-%m-%d %H:%M:%S')}'
+            WHERE FMODIFYDATE >= :last_sync_time
             ORDER BY FMODIFYDATE ASC
         """
+        params = {"last_sync_time": last_sync_time.strftime('%Y-%m-%d %H:%M:%S')}
         logger.info(f"Incremental AR data since {last_sync_time}")
         with self.connector:
-            for row in self.connector.fetch(query):
+            for row in self.connector.fetch(query, params=params):
                 yield KingdeeARVerify(**row)

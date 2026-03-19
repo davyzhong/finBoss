@@ -46,7 +46,14 @@ class KingdeeJDBC(BaseConnector):
         except Exception:
             return False
 
-    def fetch(self, query: str, batch_size: int = 1000) -> Iterator[dict[str, Any]]:
-        for chunk in pd.read_sql(text(query), self._engine, chunksize=batch_size):
+    def fetch(
+        self,
+        query: str,
+        params: dict[str, Any] | None = None,
+        batch_size: int = 1000,
+    ) -> Iterator[dict[str, Any]]:
+        for chunk in pd.read_sql(
+            text(query), self._engine, params=params or {}, chunksize=batch_size
+        ):
             for _, row in chunk.iterrows():
                 yield row.to_dict()
