@@ -18,9 +18,9 @@ router = APIRouter()
 
 @router.get("/summary", response_model=list[ARSummaryResponse])
 async def get_ar_summary(
+    data_service: DataServiceDep,
     company_code: Optional[str] = Query(default=None, description="公司编码"),
     stat_date: Optional[str] = Query(default=None, description="统计日期 YYYY-MM-DD"),
-    data_service: DataServiceDep,
 ):
     """获取 AR 汇总数据
 
@@ -44,10 +44,10 @@ async def get_ar_summary(
 
 @router.get("/customer", response_model=list[CustomerARResponse])
 async def get_customer_ar(
+    data_service: DataServiceDep,
     customer_code: Optional[str] = Query(default=None, description="客户编码"),
     is_overdue: Optional[bool] = Query(default=None, description="是否逾期"),
     limit: int = Query(default=100, ge=1, le=1000, description="返回条数"),
-    data_service: DataServiceDep,
 ):
     """获取客户 AR 汇总
 
@@ -73,12 +73,12 @@ async def get_customer_ar(
 
 @router.get("/detail", response_model=list[ARDetailResponse])
 async def get_ar_detail(
+    data_service: DataServiceDep,
     bill_no: Optional[str] = Query(default=None, description="应收单号"),
     customer_code: Optional[str] = Query(default=None, description="客户编码"),
     company_code: Optional[str] = Query(default=None, description="公司编码"),
     is_overdue: Optional[bool] = Query(default=None, description="是否逾期"),
     limit: int = Query(default=100, ge=1, le=1000, description="返回条数"),
-    data_service: DataServiceDep,
 ):
     """获取 AR 应收明细
 
@@ -108,9 +108,9 @@ async def get_ar_detail(
 
 @router.post("/quality-check", response_model=QualityCheckResponse)
 async def check_ar_quality(
-    request: QualityCheckRequest,
     data_service: DataServiceDep,
     quality_service: QualityServiceDep,
+    request: QualityCheckRequest,
 ):
     """执行 AR 数据质量检查
 

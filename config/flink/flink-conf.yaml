@@ -1,0 +1,19 @@
+jobmanager.rpc.address: 6a9350137a4c
+blob.server.port: 6124
+query.server.port: 6125
+
+jobmanager.rpc.address: 6a9350137a4c
+state.backend: rocksdb
+execution.checkpointing.interval: 60000
+
+
+jobmanager.rpc.address: 6a9350137a4c
+state.backend: rocksdb
+execution.checkpointing.interval: 60000
+
+
+jobmanager.rpc.address: flink-jobmanager
+state.backend: rocksdb
+execution.checkpointing.interval: 60000
+jobmanager.memory.process.size: 1600m
+

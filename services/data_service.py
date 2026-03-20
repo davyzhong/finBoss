@@ -161,6 +161,8 @@ class DataService:
         if latest is None:
             return datetime.now()
         return latest
+
+    def get_ar_detail(
         self,
         bill_no: Optional[str] = None,
         customer_code: Optional[str] = None,
