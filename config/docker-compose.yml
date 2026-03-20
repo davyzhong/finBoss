@@ -49,7 +49,7 @@ services:
 
   # SeaTunnel (Data Integration)
   seatunnel:
-    image: apache/seatunnel:2.3.3
+    image: apache/seatunnel:latest
     container_name: finboss-seatunnel
     ports:
       - "5801:5801"
@@ -61,45 +61,45 @@ services:
     networks:
       - finboss
 
-  # Doris FE (Frontend) - NOTE: use container service names, NOT 127.0.0.1
-  doris-fe:
-    image: apache/doris:2.1.5
-    container_name: finboss-doris-fe
-    hostname: doris-fe
-    ports:
-      - "8030:8030"
-      - "9030:9030"
-    environment:
-      FE_SERVERS: fe1:doris-fe:9010
-    networks:
-      - finboss
-    command: ["bash", "-c", "mysql -h doris-fe -P 9030 -u root -e \"SET GLOBAL enable_short_circuit_query_set_to_default = true;\"; entrypoint.sh"]
+  # Doris FE (Frontend) - Temporarily disabled (no official Docker runtime images)
+  # doris-fe:
+  #   image: selectdb/doris:2.1.5-fe
+  #   container_name: finboss-doris-fe
+  #   hostname: doris-fe
+  #   ports:
+  #     - "8030:8030"
+  #     - "9030:9030"
+  #   environment:
+  #     FE_SERVERS: fe1:doris-fe:9010
+  #   networks:
+  #     - finboss
+  #   command: ["bash", "-c", "mysql -h doris-fe -P 9030 -u root -e \"SET GLOBAL enable_short_circuit_query_set_to_default = true;\"; entrypoint.sh"]
 
-  # Doris BE (Backend) - NOTE: use container service names
-  doris-be:
-    image: apache/doris:2.1.5
-    container_name: finboss-doris-be
-    hostname: doris-be
-    ports:
-      - "8040:8040"
-      - "9050:9050"
-      - "9060:9060"
-      - "9070:9070"
-    environment:
-      BE_ADDR: doris-be:9050
-    depends_on:
-      - doris-fe
-    networks:
-      - finboss
-    command: ["bash", "-c", "mysql -h doris-fe -P 9030 -u root -e \"ALTER SYSTEM ADD BACKEND 'doris-be:9050';\"; entrypoint.sh"]
+  # Doris BE (Backend) - Temporarily disabled (no official Docker runtime images)
+  # doris-be:
+  #   image: selectdb/doris:2.1.5-be
+  #   container_name: finboss-doris-be
+  #   hostname: doris-be
+  #   ports:
+  #     - "8040:8040"
+  #     - "9050:9050"
+  #     - "9060:9060"
+  #     - "9070:9070"
+  #   environment:
+  #     BE_ADDR: doris-be:9050
+  #   depends_on:
+  #     - doris-fe
+  #   networks:
+  #     - finboss
+  #   command: ["bash", "-c", "mysql -h doris-fe -P 9030 -u root -e \"ALTER SYSTEM ADD BACKEND 'doris-be:9050';\"; entrypoint.sh"]
 
   # ClickHouse
   clickhouse:
-    image: clickhouse/clickhouse:23.8
+    image: clickhouse/clickhouse-server:23.8
     container_name: finboss-clickhouse
     ports:
       - "8123:8123"   # HTTP
-      - "9000:9000"   # Native
+      - "9002:9000"   # Native (mapped to 9002 to avoid conflict with MinIO)
     environment:
       CLICKHOUSE_DB: finboss
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -121,6 +121,7 @@ services:
         jobmanager.rpc.address: flink-jobmanager
         state.backend: rocksdb
         execution.checkpointing.interval: 60000
+        jobmanager.memory.process.size: 1600m
     volumes:
       - ./flink:/opt/flink/conf
     networks:
@@ -141,6 +142,7 @@ services:
         taskmanager.numberOfTaskSlots: 4
         state.backend: rocksdb
         execution.checkpointing.interval: 60000
+        taskmanager.memory.process.size: 2048m
     networks:
       - finboss
 
