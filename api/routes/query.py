@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from api.dependencies import DataServiceDep
+from api.dependencies import ClickHouseServiceDep
 from api.schemas.query import QueryRequest, QueryResponse
 
 router = APIRouter()
@@ -55,13 +55,13 @@ def _validate_sql(sql: str) -> None:
 @router.post("/execute", response_model=QueryResponse)
 async def execute_query(
     request: QueryRequest,
-    data_service: DataServiceDep,
+    clickhouse_service: ClickHouseServiceDep,
 ):
     """执行 SQL 查询
 
     Args:
         request: 查询请求
-        data_service: 数据服务
+        clickhouse_service: ClickHouse 数据服务
 
     Returns:
         查询结果
@@ -70,7 +70,7 @@ async def execute_query(
     try:
         _validate_sql(request.sql)
 
-        results = data_service.execute_query(
+        results = clickhouse_service.execute_query(
             sql=request.sql,
             params=request.params,
         )
@@ -88,11 +88,11 @@ async def execute_query(
 
 
 @router.get("/tables")
-async def list_tables(data_service: DataServiceDep):
+async def list_tables(clickhouse_service: ClickHouseServiceDep):
     """获取可用表列表
 
     Args:
-        data_service: 数据服务
+        clickhouse_service: ClickHouse 数据服务
 
     Returns:
         表列表
@@ -100,14 +100,14 @@ async def list_tables(data_service: DataServiceDep):
     try:
         sql = """
             SELECT
-                TABLE_SCHEMA as schema_name,
-                TABLE_NAME as table_name,
-                TABLE_ROWS as row_count
-            FROM information_schema.TABLES
-            WHERE TABLE_SCHEMA IN ('raw', 'std', 'dm')
-            ORDER BY TABLE_SCHEMA, TABLE_NAME
+                database as schema_name,
+                name as table_name,
+                total_rows as row_count
+            FROM system.tables
+            WHERE database IN ('raw', 'std', 'dm')
+            ORDER BY database, name
         """
-        results = data_service.execute_query(sql)
+        results = clickhouse_service.execute_query(sql)
         return {"tables": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -2,15 +2,15 @@
 from typing import Annotated
 
 from fastapi import Depends
-from sqlalchemy.engine import Engine
 
 from api.config import Settings, get_settings
-from services import ARService, DataService, QualityService
+from services.clickhouse_service import ClickHouseDataService
+from services.quality_service import QualityService
 
 
-def get_ar_service() -> ARService:
-    """获取 AR 服务实例"""
-    return ARService()
+def get_clickhouse_service() -> ClickHouseDataService:
+    """获取 ClickHouse 数据服务实例"""
+    return ClickHouseDataService()
 
 
 def get_quality_service() -> QualityService:
@@ -18,15 +18,7 @@ def get_quality_service() -> QualityService:
     return QualityService()
 
 
-def get_data_service(
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> DataService:
-    """获取数据服务实例"""
-    return DataService()
-
-
 # 类型别名，方便路由使用
-ARServiceDep = Annotated[ARService, Depends(get_ar_service)]
+ClickHouseServiceDep = Annotated[ClickHouseDataService, Depends(get_clickhouse_service)]
 QualityServiceDep = Annotated[QualityService, Depends(get_quality_service)]
-DataServiceDep = Annotated[DataService, Depends(get_data_service)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]

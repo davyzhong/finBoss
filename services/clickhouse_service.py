@@ -1,38 +1,27 @@
-# services/data_service.py
-"""数据查询服务"""
+"""ClickHouse 数据查询服务"""
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from clickhouse_driver import Client
 
 from api.config import get_settings
 
 
-class DataService:
-    """数据查询服务 - Doris/ClickHouse 查询封装"""
+class ClickHouseDataService:
+    """ClickHouse 数据查询服务"""
 
-    def __init__(self, engine: Optional[Engine] = None, use_clickhouse: bool = True):
+    def __init__(self, client: Optional[Client] = None):
         settings = get_settings()
-        if engine is None:
-            # 默认使用 ClickHouse（Phase 1）
-            if use_clickhouse:
-                self.engine = create_engine(
-                    f"clickhouse+native://{settings.clickhouse.user}:{settings.clickhouse.password}@{settings.clickhouse.host}:{settings.clickhouse.port}/{settings.clickhouse.database}",
-                    pool_pre_ping=True,
-                    pool_size=5,
-                    max_overflow=10,
-                )
-            else:
-                # 使用 Doris（Phase 2+）
-                self.engine = create_engine(
-                    settings.doris.connection_url,
-                    pool_pre_ping=True,
-                    pool_size=5,
-                    max_overflow=10,
-                )
+        if client is None:
+            self.client = Client(
+                host=settings.clickhouse.host,
+                port=settings.clickhouse.port,
+                user=settings.clickhouse.user,
+                password=settings.clickhouse.password,
+                database=settings.clickhouse.database,
+            )
         else:
-            self.engine = engine
+            self.client = client
 
     def execute_query(
         self,
@@ -48,10 +37,16 @@ class DataService:
         Returns:
             查询结果列表
         """
-        with self.engine.connect() as conn:
-            result = conn.execute(text(sql), params or {})
-            columns = result.keys()
-            return [dict(zip(columns, row)) for row in result.fetchall()]
+        # 使用 with_column_types=True 获取列信息
+        # clickhouse-driver 返回 (data, column_types) 元组
+        result = self.client.execute(sql, params or {}, with_column_types=True)
+        if not result or not result[0]:
+            return []
+
+        data, column_types = result
+        # column_types 是 [(列名, 类型), ...] 格式
+        column_names = [col[0] for col in column_types]
+        return [dict(zip(column_names, row)) for row in data]
 
     def execute_scalar(self, sql: str) -> Any:
         """执行查询并返回标量值
@@ -62,9 +57,10 @@ class DataService:
         Returns:
             查询结果（单个值）
         """
-        with self.engine.connect() as conn:
-            result = conn.execute(text(sql))
-            return result.scalar()
+        result = self.client.execute(sql)
+        if not result:
+            return None
+        return result[0][0] if result else None
 
     def get_ar_summary(
         self,
@@ -104,10 +100,10 @@ class DataService:
         """
         params = {}
         if company_code:
-            sql += " AND company_code = :company_code"
+            sql += " AND company_code = %(company_code)s"
             params["company_code"] = company_code
         if stat_date:
-            sql += " AND stat_date = :stat_date"
+            sql += " AND stat_date = %(stat_date)s"
             params["stat_date"] = stat_date
         sql += " ORDER BY stat_date DESC, company_code LIMIT 1000"
         return self.execute_query(sql, params)
@@ -146,11 +142,11 @@ class DataService:
         """
         params: dict[str, Any] = {}
         if customer_code:
-            sql += " AND customer_code = :customer_code"
+            sql += " AND customer_code = %(customer_code)s"
             params["customer_code"] = customer_code
         if is_overdue is not None:
             sql += " AND overdue_count > 0" if is_overdue else " AND overdue_count = 0"
-        # LIMIT 在 MySQL/Doris 中不支持绑定参数，直接拼接（limit 已由 FastAPI 校验为 int）
+        # ClickHouse 直接拼接 limit
         sql += f" ORDER BY overdue_amount DESC LIMIT {int(limit)}"
         return self.execute_query(sql, params)
 
@@ -218,17 +214,17 @@ class DataService:
         """
         params: dict[str, Any] = {}
         if bill_no:
-            sql += " AND bill_no = :bill_no"
+            sql += " AND bill_no = %(bill_no)s"
             params["bill_no"] = bill_no
         if customer_code:
-            sql += " AND customer_code = :customer_code"
+            sql += " AND customer_code = %(customer_code)s"
             params["customer_code"] = customer_code
         if company_code:
-            sql += " AND company_code = :company_code"
+            sql += " AND company_code = %(company_code)s"
             params["company_code"] = company_code
         if is_overdue is not None:
-            sql += " AND is_overdue = :is_overdue"
+            sql += " AND is_overdue = %(is_overdue)s"
             params["is_overdue"] = is_overdue
-        # LIMIT 在 MySQL/Doris 中不支持绑定参数，直接拼接（limit 已由 FastAPI 校验为 int）
+        # ClickHouse 直接拼接 limit
         sql += f" ORDER BY bill_date DESC LIMIT {int(limit)}"
         return self.execute_query(sql, params)

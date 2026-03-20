@@ -11,11 +11,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class KingdeeDBConfig(BaseSettings):
     """金蝶数据库配置"""
 
+    model_config = SettingsConfigDict(
+        env_prefix="kingdee_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     host: str = Field(default="localhost", description="数据库主机")
     port: int = Field(default=1433, description="数据库端口")
-    name: str = Field(description="数据库名称")
-    user: str = Field(description="用户名")
-    password: str = Field(description="密码")
+    name: str = Field(default="AIS20220323153128", description="数据库名称")
+    user: str = Field(default="sa", description="用户名")
+    password: str = Field(default="", description="密码")
 
     @property
     def jdbc_url(self) -> str:
@@ -25,6 +32,13 @@ class KingdeeDBConfig(BaseSettings):
 class MinioConfig(BaseSettings):
     """MinIO 配置"""
 
+    model_config = SettingsConfigDict(
+        env_prefix="minio_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     endpoint: str = Field(default="localhost:9000", description="MinIO endpoint")
     access_key: str = Field(default="minioadmin", description="Access Key")
     secret_key: str = Field(default="minioadmin", description="Secret Key")
@@ -33,6 +47,13 @@ class MinioConfig(BaseSettings):
 
 class DorisConfig(BaseSettings):
     """Doris 配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="doris_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     host: str = Field(default="localhost", description="Doris FE 主机")
     port: int = Field(default=9030, description="Doris FE 端口")
@@ -47,6 +68,13 @@ class DorisConfig(BaseSettings):
 class ClickHouseConfig(BaseSettings):
     """ClickHouse 配置"""
 
+    model_config = SettingsConfigDict(
+        env_prefix="clickhouse_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     host: str = Field(default="localhost", description="ClickHouse 主机")
     port: int = Field(default=9000, description="ClickHouse 端口")
     user: str = Field(default="default", description="用户名")
@@ -57,12 +85,26 @@ class ClickHouseConfig(BaseSettings):
 class IcebergConfig(BaseSettings):
     """Iceberg 配置"""
 
+    model_config = SettingsConfigDict(
+        env_prefix="iceberg_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     warehouse: str = Field(default="s3://finboss/warehouse", description="仓库路径")
-    catalog_uri: str = Field(default="thrift://localhost:9083", description="Catalog URI")
+    catalog_uri: str = Field(default="http://localhost:19120/api/v1", description="Catalog URI")
 
 
 class AppConfig(BaseSettings):
     """应用配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="app_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_name: str = Field(default="FinBoss", description="应用名称")
     app_version: str = Field(default="0.1.0", description="版本号")
@@ -79,6 +121,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",  # 忽略环境变量中额外字段
     )
 
     kingdee: KingdeeDBConfig = Field(default_factory=KingdeeDBConfig)
