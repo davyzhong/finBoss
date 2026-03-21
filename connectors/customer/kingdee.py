@@ -1,7 +1,7 @@
 # connectors/customer/kingdee.py
 """金蝶客户连接器"""
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pymssql
@@ -98,6 +98,7 @@ class KingdeeCustomerConnector(ERPCustomerConnector):
         }
         ingester = KingdeeARIngester(db_dict)
         raw_records = list(ingester.ingest_full(start_date=start_date, end_date=end_date))
+        today = date.today()
         return [
             RawARRecord(
                 source_system=self.source_system,
@@ -105,11 +106,11 @@ class KingdeeCustomerConnector(ERPCustomerConnector):
                 customer_name=r.fcustname or "",
                 bill_no=r.fbillno,
                 bill_date=r.fdate.date() if hasattr(r.fdate, "date") else r.fdate,
-                due_date=r.fdate.date() if hasattr(r.fdate, "date") else r.fdate,
+                due_date=(r.fdate + timedelta(days=30)).date(),
                 bill_amount=r.fbillamount,
                 received_amount=r.fpaymentamount,
-                is_overdue=(r.funallocateamount > 0),
-                overdue_days=0,
+                is_overdue=(r.funallocateamount > 0 and (today - (r.fdate + timedelta(days=30)).date()).days > 0),
+                overdue_days=max(0, (today - (r.fdate + timedelta(days=30)).date()).days),
                 company_code=str(r.fcompanyid),
             )
             for r in raw_records

@@ -1,6 +1,6 @@
 # tests/unit/test_customer_connector.py
 """测试 ERP 客户连接器"""
-from datetime import date
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -99,3 +99,77 @@ class TestKingdeeCustomerConnector:
                     start_date=date(2025, 1, 1),
                     end_date=date(2025, 12, 31),
                 )
+
+    def test_fetch_ar_records_overdue_days_from_due_date(self):
+        """due_date = bill_date + 30 days; overdue_days = max(0, today - due_date)"""
+        with patch("connectors.customer.kingdee.get_settings") as mock_settings:
+            mock_settings.return_value.kingdee.jdbc_url = "url"
+
+            # Mock ingester that returns one record with fdate = today - 45 days
+            # So due_date = today - 15 days, overdue_days = 15
+            past_date = datetime.now() - timedelta(days=45)
+
+            class FakeRecord:
+                fcustid = 1001
+                fcustname = "测试客户"
+                fbillno = "AR001"
+                fdate = past_date
+                fbillamount = 10000.0
+                fpaymentamount = 0.0
+                funallocateamount = 5000.0
+                fcompanyid = 1
+
+            mock_ingester = MagicMock()
+            mock_ingester.ingest_full.return_value = [FakeRecord()]
+
+            with patch(
+                "pipelines.ingestion.kingdee_ar.KingdeeARIngester",
+                return_value=mock_ingester,
+            ):
+                conn = KingdeeCustomerConnector()
+                records = conn.fetch_ar_records()
+
+            assert len(records) == 1
+            rec = records[0]
+            # due_date should be fdate + 30 days = today - 15 days
+            expected_due_date = (past_date + timedelta(days=30)).date()
+            assert rec.due_date == expected_due_date
+            # overdue_days = max(0, today - due_date) = 15
+            assert rec.overdue_days == 15
+            # is_overdue = funallocateamount > 0 AND overdue_days > 0
+            assert rec.is_overdue is True
+
+    def test_fetch_ar_records_not_overdue_if_within_terms(self):
+        """Bill due in the future should not be overdue"""
+        with patch("connectors.customer.kingdee.get_settings") as mock_settings:
+            mock_settings.return_value.kingdee.jdbc_url = "url"
+
+            # fdate = today - 10 days -> due_date = today + 20 days (not overdue)
+            recent_date = datetime.now() - timedelta(days=10)
+
+            class FakeRecord:
+                fcustid = 1002
+                fcustname = "另一客户"
+                fbillno = "AR002"
+                fdate = recent_date
+                fbillamount = 5000.0
+                fpaymentamount = 0.0
+                funallocateamount = 5000.0
+                fcompanyid = 2
+
+            mock_ingester = MagicMock()
+            mock_ingester.ingest_full.return_value = [FakeRecord()]
+
+            with patch(
+                "pipelines.ingestion.kingdee_ar.KingdeeARIngester",
+                return_value=mock_ingester,
+            ):
+                conn = KingdeeCustomerConnector()
+                records = conn.fetch_ar_records()
+
+            assert len(records) == 1
+            rec = records[0]
+            # overdue_days should be 0 (due_date is in future)
+            assert rec.overdue_days == 0
+            # is_overdue = False because overdue_days == 0
+            assert rec.is_overdue is False
