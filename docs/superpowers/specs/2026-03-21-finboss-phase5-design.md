@@ -1,11 +1,12 @@
 # FinBoss Phase 5 - 预警报表与自动化报告
 
-> 版本：v1.2
+> 版本：v1.3
 > 日期：2026-03-21
 > 状态：待评审
 > Changelog:
 > - v1.1: 修复评审指出的指标定义缺失、02:00竞争、环比计算逻辑、业务员通道延期、recipient配置
 > - v1.2: 修复评审指出的 ORDER BY 缺失、env var 未声明、recipients JSON 结构、delta 窗口不均匀、new_overdue_count 无 SQL、FeishuClient 路径
+> - v1.3: 修复评审指出的 customer_id→unified_customer_code、std_ar 表名、duplicate 2.2 章节、JOIN 键说明、FeishuConfig 字段
 
 ---
 
@@ -53,7 +54,7 @@ Phase 5 复用 Phase 4B 已有组件：
 |------|------|
 | `FEISHU_MGMT_CHANNEL_ID` | 财务总监飞书群 ID（OC 开头）或 webhook URL |
 
-### 2.2 模块结构
+### 2.4 模块结构
 
 ```
 api/routes/
@@ -130,11 +131,11 @@ FROM (
 
 **`new_overdue_count` SQL**：
 ```sql
-SELECT countIf(customer_id, ar_overdue > 0 AND prev_overdue = 0)
+SELECT countIf(unified_customer_code, ar_overdue > 0 AND prev_overdue = 0)
 FROM (
     SELECT
-        customer_id, ar_overdue,
-        lagInFrame(ar_overdue) OVER (ORDER BY stat_date) AS prev_overdue
+        unified_customer_code, ar_overdue,
+        lagInFrame(ar_overdue) OVER (PARTITION BY unified_customer_code ORDER BY stat_date) AS prev_overdue
     FROM dm.dm_customer360
     WHERE stat_date >= today()-1 AND stat_date <= today()
     QUALIFY stat_date = today()   -- 只取今天
@@ -145,9 +146,11 @@ FROM (
 ```sql
 SELECT
     sumIf(ar_amount, date_diff('day', due_date, today()) > 90)
-    / sum(ar_amount) AS aging_90pct
-FROM std.std_ar_record
-WHERE stat_date = today()   -- 或 max(stat_date)
+    / nullIf(sum(ar_amount), 0) AS aging_90pct
+FROM std.std_ar
+WHERE stat_date = (
+    SELECT max(stat_date) FROM std.std_ar
+)
 ```
 
 **`new_overdue_count` 计算说明**：今日 `ar_overdue > 0` 且昨日 `ar_overdue = 0` 的客户数。
@@ -261,10 +264,13 @@ ReportService.generate_report(type, recipients)
     ▼
 ReportService.send_report(report_id, recipients)
     │
-    ├── 查询 `dm.report_recipients` 表获取各 channel_id
-    ├── FeishuClient.send_card_to_channel(card, channel_id)
+    ├── 解析 recipients JSON → 取得 recipient_id 列表
+    ├── 查询 `dm.report_recipients` 表：`SELECT channel_id FROM dm.report_recipients WHERE id IN (...) AND enabled = 1`
+    ├── FeishuClient.send_card_to_channel(card, channel_id)  -- channel_id 为飞书群 ID 或 webhook URL
     └── 更新 report_records 状态为 sent
 ```
+
+**JOIN 键说明**：`report_records.recipients` JSON 中的 `recipient_id` = `report_recipients.id`。
 
 ### 5.5 飞书消息卡片
 
