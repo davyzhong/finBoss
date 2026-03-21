@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from services.dashboard_service import DashboardService
 from services.report_service import ReportService
 
-router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
+router = APIRouter(tags=["reports"])
 
 
 @lru_cache
