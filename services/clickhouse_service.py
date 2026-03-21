@@ -543,6 +543,26 @@ class ClickHouseDataService:
     ) -> dict[str, Any]:
         """撤销合并"""
         import uuid
+
+        # Step 1: Read the current raw_customer_ids array for the unified customer
+        rows = self.execute_query(
+            "SELECT raw_customer_ids FROM dm.dm_customer360 "
+            "WHERE unified_customer_code = %(code)s ORDER BY updated_at DESC LIMIT 1",
+            {"code": unified_customer_code},
+        )
+
+        if rows:
+            current_ids = rows[0]["raw_customer_ids"]  # Array(String) -> Python list
+            # Step 2: Filter out original_customer_id
+            new_ids = [cid for cid in current_ids if cid != original_customer_id]
+            # Step 3: UPDATE the row with the new array
+            self.client.execute(
+                "ALTER TABLE dm.dm_customer360 UPDATE raw_customer_ids = %(new_ids)s "
+                "WHERE unified_customer_code = %(code)s",
+                {"new_ids": new_ids, "code": unified_customer_code},
+            )
+
+        # Step 4: Insert history record
         undo_id = str(uuid.uuid4())
         self.client.execute(
             "INSERT INTO dm.merge_history (id, unified_customer_code, source_system, original_customer_id, operated_at, operator, undo_record_id) VALUES",
