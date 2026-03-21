@@ -181,6 +181,31 @@ def _register_phase6_jobs(scheduler: AsyncIOScheduler) -> None:
     )
 
 
+def _register_phase7a_jobs(scheduler: AsyncIOScheduler) -> None:
+    """注册 Phase 7A 调度任务：每日 06:00 数据质量检查"""
+
+    def daily_quality_job() -> None:
+        import logging
+        logger7 = logging.getLogger(__name__)
+        try:
+            from services.field_quality_service import FieldQualityService
+            svc = FieldQualityService()
+            result = svc.check_all()  # check_all calls generate_report_html internally
+            svc.send_feishu_card()
+            logger7.info(f"[Phase7A] Quality check done: {result['total_tables']} tables, {result['anomaly_count']} anomalies")
+        except Exception as e:
+            logger7.error(f"[Phase7A] Quality check failed: {e}", exc_info=True)
+
+    from apscheduler.triggers.cron import CronTrigger
+    scheduler.add_job(
+        daily_quality_job,
+        CronTrigger(hour=6, minute=0),
+        id="phase7a_daily_quality",
+        name="数据质量每日检查",
+        replace_existing=True,
+    )
+
+
 def start_scheduler() -> AsyncIOScheduler | None:
     """启动 APScheduler（仅在非测试环境）"""
     global _scheduler
@@ -203,8 +228,9 @@ def start_scheduler() -> AsyncIOScheduler | None:
     )
     _register_phase5_jobs(_scheduler)
     _register_phase6_jobs(_scheduler)
+    _register_phase7a_jobs(_scheduler)
     _scheduler.start()
-    logger.info("APScheduler 已启动，Phase 5 + Phase 6 调度任务已注册")
+    logger.info("APScheduler 已启动，Phase 5 + Phase 6 + Phase 7A 调度任务已注册")
     return _scheduler
 
 
