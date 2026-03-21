@@ -150,6 +150,22 @@ class MilvusConfig(BaseSettings):
     top_k: int = Field(default=5, description="默认召回数量")
 
 
+class FeishuConfig(BaseSettings):
+    """飞书应用配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="feishu_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    app_id: str = Field(default="", description="飞书应用 App ID")
+    app_secret: str = Field(default="", description="飞书应用 App Secret")
+    bot_name: str = Field(default="FinBoss财务助手", description="机器人名称")
+    verification_token: str = Field(default="", description="Webhook 验证 Token（可选）")
+
+
 class Settings(BaseSettings):
     """全局配置"""
 
@@ -168,6 +184,7 @@ class Settings(BaseSettings):
     app: AppConfig = Field(default_factory=AppConfig)
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     milvus: MilvusConfig = Field(default_factory=MilvusConfig)
+    feishu: FeishuConfig = Field(default_factory=FeishuConfig)
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> "Settings":
