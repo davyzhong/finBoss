@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS dm.alert_rules (
     created_at     DateTime,
     updated_at     DateTime
 ) ENGINE = ReplacingMergeTree(updated_at)
-ORDER BY (id, updated_at)
-SETTINGS allow_experimental_object_type = 1;
+ORDER BY (id, updated_at);
+
 
 -- dm.alert_history
 CREATE TABLE IF NOT EXISTS dm.alert_history (
@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS dm.alert_history (
     triggered_at   DateTime,
     sent           UInt8
 ) ENGINE = ReplacingMergeTree(triggered_at)
-ORDER BY (rule_id, triggered_at)
-SETTINGS allow_experimental_object_type = 1;
+ORDER BY (rule_id, triggered_at);
+
 
 -- dm.report_records
 CREATE TABLE IF NOT EXISTS dm.report_records (
@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS dm.report_records (
     sent_at        DateTime,
     status         String
 ) ENGINE = ReplacingMergeTree(sent_at)
-ORDER BY (report_type, sent_at)
-SETTINGS allow_experimental_object_type = 1;
+ORDER BY (report_type, sent_at);
+
 
 -- dm.report_recipients
 CREATE TABLE IF NOT EXISTS dm.report_recipients (
@@ -58,5 +58,5 @@ CREATE TABLE IF NOT EXISTS dm.report_recipients (
     enabled         UInt8,
     created_at      DateTime
 ) ENGINE = ReplacingMergeTree(created_at)
-ORDER BY (recipient_type, id)
-SETTINGS allow_experimental_object_type = 1;
+ORDER BY (recipient_type, id);
+

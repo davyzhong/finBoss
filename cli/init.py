@@ -78,7 +78,7 @@ def init_phase5(
     console.print("\n[bold]插入内置告警规则:[/bold]")
     for rule in BUILTIN_ALERT_RULES:
         try:
-            ch.execute(
+            ch.client.execute(
                 "INSERT INTO dm.alert_rules "
                 "(id, name, metric, operator, threshold, scope_type, scope_value, alert_level, enabled, created_at, updated_at) "
                 "VALUES (%(id)s, %(name)s, %(metric)s, %(operator)s, %(threshold)s, %(scope_type)s, %(scope_value)s, %(alert_level)s, %(enabled)s, now(), now())",
@@ -95,7 +95,7 @@ def init_phase5(
     mgmt_channel = os.environ.get("FEISHU_MGMT_CHANNEL_ID", "").strip()
     if mgmt_channel:
         try:
-            ch.execute(
+            ch.client.execute(
                 "INSERT INTO dm.report_recipients "
                 "(id, recipient_type, name, channel_id, enabled, created_at) "
                 "VALUES (%(id)s, %(type)s, %(name)s, %(channel_id)s, %(enabled)s, now())",
