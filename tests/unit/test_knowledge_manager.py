@@ -1,7 +1,8 @@
 """测试 KnowledgeManager"""
-import pytest
-from unittest.mock import MagicMock, patch, Mock
 from datetime import datetime
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from schemas.attribution import KnowledgeDoc
 
@@ -287,9 +288,7 @@ class TestKnowledgeManagerCRUD:
         assert doc.version == 2
         assert doc.content == "新内容"
         # Verify old version was soft-deleted
-        update_calls = [
-            c for c in mock_collection.update.call_args_list
-        ]
+        update_calls = list(mock_collection.update.call_args_list)
         assert len(update_calls) >= 1
         # Verify new version was inserted
         mock_collection.insert.assert_called_once()
