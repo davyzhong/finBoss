@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import get_settings
-from api.routes import ai, ar, knowledge, query, attribution, feishu
+from api.routes import ai, ar, attribution, feishu, knowledge, query
 
 
 @asynccontextmanager
