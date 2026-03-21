@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FinBoss is an enterprise financial AI data platform connecting heterogeneous ERP systems, aggregating data, and providing AI-driven analytics and reporting. Currently in Phase 1 MVP focusing on the core data layer and AR (Accounts Receivable) dataset.
+FinBoss is an enterprise financial AI data platform connecting heterogeneous ERP systems, aggregating data, and providing AI-driven analytics and reporting. Currently in **Phase 2** (AI 能力验证) - Ollama LLM + RAG knowledge base + NL query POC.
 
-**Tech Stack**: Python 3.11, FastAPI, ClickHouse, Apache Iceberg, SeaTunnel, Flink, Kafka, MinIO, dbt
+**Tech Stack**: Python 3.11, FastAPI, ClickHouse, Ollama, Milvus, Apache Iceberg, SeaTunnel, Flink, Kafka, MinIO, dbt
 
 ## Development Commands
 
@@ -22,8 +22,16 @@ cp .env.example .env
 
 ### Running the Application
 ```bash
-# Start infrastructure services (ClickHouse, Kafka, MinIO, Flink, etc.)
+# Start infrastructure services (Phase 1: ClickHouse, Kafka, MinIO, Flink)
+# Phase 2 also includes: Milvus (vector DB), Ollama (LLM), etcd
 docker-compose -f config/docker-compose.yml up -d
+
+# Pull Ollama models (first time only, ~4GB each)
+docker exec finboss-ollama ollama pull qwen2.5:7b
+docker exec finboss-ollama ollama pull nomic-embed-text
+
+# Initialize financial knowledge base
+uv run python scripts/ingest_financial_knowledge.py
 
 # Start FastAPI development server
 uv run uvicorn api.main:app --reload --port 8000
@@ -89,6 +97,9 @@ Each layer has corresponding Pydantic models in `schemas/` directory:
 - **`services/clickhouse_service.py`** - Primary data access service for ClickHouse queries
 - **`services/quality_service.py`** - Data quality validation and monitoring
 - **`services/ar_service.py`** - AR-specific business logic
+- **`services/ai/ollama_service.py`** - Ollama LLM wrapper (local inference)
+- **`services/ai/rag_service.py`** - RAG pipeline (Milvus vector search)
+- **`services/ai/nl_query_service.py`** - Natural language → SQL → result → NL explanation
 
 Services use dependency injection via FastAPI's `Depends()`:
 ```python
@@ -131,6 +142,12 @@ Environment variable naming convention:
 - **`api/routes/query.py`** - SQL execution endpoints: `/api/v1/query/*`
   - `/execute` - Execute read-only SQL queries
   - `/tables` - List available tables
+- **`api/routes/ai.py`** - AI endpoints: `/api/v1/ai/*` (Phase 2)
+  - `/query` - Natural language query (NL → SQL → result → NL)
+  - `/health` - Check Ollama + Milvus status
+  - `/rag/search` - Search knowledge base
+  - `/rag/ingest` - Add document to knowledge base
+  - `/rag/ingest/batch` - Batch add documents
 
 ## ClickHouse Integration
 

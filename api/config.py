@@ -1,7 +1,7 @@
 """配置管理"""
+
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 import yaml
 from pydantic import Field
@@ -107,11 +107,47 @@ class AppConfig(BaseSettings):
     )
 
     app_name: str = Field(default="FinBoss", description="应用名称")
-    app_version: str = Field(default="0.1.0", description="版本号")
+    app_version: str = Field(default="0.2.0", description="版本号")
     api_host: str = Field(default="0.0.0.0", description="API 主机")
     api_port: int = Field(default=8000, description="API 端口")
     log_level: str = Field(default="INFO", description="日志级别")
     debug: bool = Field(default=False, description="调试模式")
+
+
+class OllamaConfig(BaseSettings):
+    """Ollama 本地 LLM 配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="ollama_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    base_url: str = Field(default="http://localhost:11434", description="Ollama 服务地址")
+    model: str = Field(default="qwen2.5:7b", description="默认模型名称")
+    temperature: float = Field(default=0.1, description="生成温度")
+    max_tokens: int = Field(default=512, description="最大生成token数")
+    timeout: int = Field(default=180, description="请求超时秒数")
+
+
+class MilvusConfig(BaseSettings):
+    """Milvus 向量数据库配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="milvus_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    host: str = Field(default="localhost", description="Milvus 主机")
+    port: int = Field(default=19530, description="Milvus GRPC 端口")
+    user: str = Field(default="", description="用户名")
+    password: str = Field(default="", description="密码")
+    collection_name: str = Field(default="finboss_knowledge", description="知识库集合名")
+    embedding_model: str = Field(default="BAAI/bge-m3", description="Embedding 模型")
+    top_k: int = Field(default=5, description="默认召回数量")
 
 
 class Settings(BaseSettings):
@@ -130,6 +166,8 @@ class Settings(BaseSettings):
     clickhouse: ClickHouseConfig = Field(default_factory=ClickHouseConfig)
     iceberg: IcebergConfig = Field(default_factory=IcebergConfig)
     app: AppConfig = Field(default_factory=AppConfig)
+    ollama: OllamaConfig = Field(default_factory=OllamaConfig)
+    milvus: MilvusConfig = Field(default_factory=MilvusConfig)
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> "Settings":

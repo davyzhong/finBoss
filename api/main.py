@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import get_settings
-from api.routes import ar, query
+from api.routes import ai, ar, query
 
 
 @asynccontextmanager
@@ -24,7 +24,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app.app_name,
         version=settings.app.app_version,
-        description="企业财务AI信息化系统 - Phase 1 MVP",
+        description="企业财务AI信息化系统 - Phase 2 AI",
         docs_url="/docs",
         redoc_url="/redoc",
         lifespan=lifespan,
@@ -42,11 +42,8 @@ def create_app() -> FastAPI:
 
     # 注册路由
     app.include_router(ar.router, prefix="/api/v1/ar", tags=["AR应收"])
-    app.include_router(
-        query.router,
-        prefix="/api/v1/query",
-        tags=["数据查询"],
-    )
+    app.include_router(query.router, prefix="/api/v1/query", tags=["数据查询"])
+    app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI智能"])
 
     @app.get("/health")
     async def health_check():
