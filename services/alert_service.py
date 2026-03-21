@@ -177,11 +177,21 @@ class AlertService:
         """保存预警历史到 ClickHouse"""
         try:
             self._ch.execute(
-                f"INSERT INTO dm.alert_history "
-                f"(id, rule_id, rule_name, alert_level, metric, operator, metric_value, threshold, scope_type, scope_value, triggered_at, sent) "
-                f"VALUES ('{alert.id}', '{alert.rule_id}', '{alert.rule_name}', '{alert.alert_level}', "
-                f"'{alert.metric}', '{alert.operator}', {alert.metric_value}, {alert.threshold}, "
-                f"'{alert.scope_type}', '{alert.scope_value or ''}', now(), 0)"
+                "INSERT INTO dm.alert_history "
+                "(id, rule_id, rule_name, alert_level, metric, operator, metric_value, threshold, scope_type, scope_value, triggered_at, sent) "
+                "VALUES (%(id)s, %(rule_id)s, %(rule_name)s, %(alert_level)s, %(metric)s, %(operator)s, %(metric_value)s, %(threshold)s, %(scope_type)s, %(scope_value)s, now(), 0)",
+                {
+                    "id": alert.id,
+                    "rule_id": alert.rule_id,
+                    "rule_name": alert.rule_name,
+                    "alert_level": str(alert.alert_level),
+                    "metric": alert.metric,
+                    "operator": alert.operator,
+                    "metric_value": alert.metric_value,
+                    "threshold": alert.threshold,
+                    "scope_type": alert.scope_type,
+                    "scope_value": alert.scope_value or "",
+                }
             )
         except Exception:
             pass  # 不阻塞预警流程

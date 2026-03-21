@@ -186,10 +186,17 @@ class ReportService:
         recipients = '[{"recipient_id": "mgmt_1", "type": "management"}]'
         try:
             self._ch.execute(
-                f"INSERT INTO dm.report_records "
-                f"(id, report_type, period_start, period_end, recipients, file_path, sent_at, status) "
-                f"VALUES ('{record_id}', '{report_type}', '{period_start}', '{period_end}', "
-                f"'{recipients}', '{file_path}', now(), 'generated')"
+                "INSERT INTO dm.report_records "
+                "(id, report_type, period_start, period_end, recipients, file_path, sent_at, status) "
+                "VALUES (%(id)s, %(report_type)s, %(period_start)s, %(period_end)s, %(recipients)s, %(file_path)s, now(), 'generated')",
+                {
+                    "id": record_id,
+                    "report_type": report_type,
+                    "period_start": period_start.isoformat(),
+                    "period_end": period_end.isoformat(),
+                    "recipients": recipients,
+                    "file_path": file_path,
+                }
             )
         except Exception:
             pass

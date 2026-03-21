@@ -42,7 +42,8 @@ async def trigger_monthly(service: ReportServiceDep):
 async def list_records(service: ReportServiceDep, limit: int = 20):
     """查询报告发送记录"""
     rows = service._ch.execute_query(
-        f"SELECT * FROM dm.report_records ORDER BY sent_at DESC LIMIT {limit}"
+        "SELECT * FROM dm.report_records ORDER BY sent_at DESC LIMIT %(limit)s",
+        {"limit": min(limit, 1000)}
     )
     return {"items": rows, "total": len(rows)}
 
