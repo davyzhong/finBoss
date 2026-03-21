@@ -360,7 +360,20 @@ class ClickHouseDataService:
         FROM dm.dm_customer360
         WHERE stat_date = %(stat_date)s
         """
-        row = self.execute_query(sql, {"stat_date": stat_date})[0]
+        rows = self.execute_query(sql, {"stat_date": stat_date})
+        if not rows:
+            # Return zero'd summary for dates with no data
+            return Customer360Summary(
+                total_customers=0,
+                merged_customers=0,
+                pending_merges=0,
+                ar_total=Decimal("0"),
+                ar_overdue_total=Decimal("0"),
+                overall_overdue_rate=0.0,
+                risk_distribution={"高": 0, "中": 0, "低": 0},
+                concentration_top10_ratio=0.0,
+            )
+        row = rows[0]
 
         # 计算前10客户集中度（子查询）
         top10_sql = """
@@ -376,13 +389,22 @@ class ClickHouseDataService:
         top10_ar = float(top10_row["top10_ar"]) if top10_row and top10_row["top10_ar"] else 0.0
         concentration = (top10_ar / total_ar) if total_ar > 0 else 0.0
 
+        raw_rate = row["overall_overdue_rate"]
+        overall_overdue_rate = float(raw_rate) if raw_rate is not None else 0.0
+        if overall_overdue_rate == float("inf") or overall_overdue_rate != overall_overdue_rate:
+            overall_overdue_rate = 0.0
+        overall_overdue_rate *= 100
+
+        if concentration == float("inf") or concentration != concentration:
+            concentration = 0.0
+
         return Customer360Summary(
             total_customers=row["total_customers"],
             merged_customers=row["merged_customers"],
             pending_merges=row["pending_merges"],
             ar_total=Decimal(str(row["ar_total"])),
             ar_overdue_total=Decimal(str(row["ar_overdue_total"])),
-            overall_overdue_rate=float(row["overall_overdue_rate"]) * 100,  # 转为百分比
+            overall_overdue_rate=overall_overdue_rate,  # already in percentage
             risk_distribution={"高": row["risk_high"], "中": row["risk_mid"], "低": row["risk_low"]},
             concentration_top10_ratio=concentration,
         )
