@@ -1,8 +1,11 @@
 # FinBoss Phase 7A - 数据质量监控面板
 
-> 版本：v1.1
+> 版本：v1.2
 > 日期：2026-03-21
-> 状态：草稿
+> 状态：已评审
+> Changelog:
+> - v1.1: 初稿
+> - v1.2: 补充 SeverityEnum 定义、resolved_at 填充逻辑、API severity 字段说明、实施顺序细化
 
 ---
 
@@ -105,12 +108,19 @@ SETTINGS allow_experimental_object_type = 1;
 
 ### 3.3 异常指标定义
 
-| 指标 | SQL 计算方式 | 高危阈值 | 中危阈值 |
-|------|------------|---------|---------|
-| `null_rate` | `countIf(col IS NULL) / count()` | > 20% | > 10% |
-| `distinct_rate` | `uniqExact(col) / count()` | > 99.9% | > 99% |
-| `negative_rate` | `countIf(val < 0) / count()`（仅数值型字段） | > 5% | > 2% |
-| `freshness_hours` | `now() - MAX(etl_time)` | > 72h | > 48h |
+```python
+class Severity(str, Enum):
+    HIGH = "高"
+    MEDIUM = "中"
+    LOW = "低"
+```
+
+| 指标 | SQL 计算方式 | 高危阈值 | 中危阈值 | 对应 severity |
+|------|------------|---------|---------|-------------|
+| `null_rate` | `countIf(col IS NULL) / count()` | > 20% | > 10% | 高 / 中 |
+| `distinct_rate` | `uniqExact(col) / count()` | > 99.9% | > 99% | 中 / 低 |
+| `negative_rate` | `countIf(val < 0) / count()`（仅数值型字段） | > 5% | > 2% | 高 / 中 |
+| `freshness_hours` | `now() - MAX(etl_time)` | > 72h | > 48h | 中 / 低 |
 
 **字段类型判断**：通过 `system.columns` 的 `type` 字段识别。
 - 数值型：`Int*/UInt*/Float*` → 检查 `negative_rate`
@@ -204,6 +214,9 @@ score_pct = (正常字段数 / 总字段数) × 100
 }
 ```
 
+> `high_severity` / `medium_severity` 为计数（整数），severity 实际存储值为 `"高"` / `"中"` / `"低"`（`Severity` 枚举）。
+```
+
 **`PUT /api/v1/quality/anomalies/{id}` 请求**：
 ```json
 {
@@ -211,6 +224,8 @@ score_pct = (正常字段数 / 总字段数) × 100
   "note": "已修复，字段已补值"
 }
 ```
+
+> `status=resolved` 时，`QualityService.update_anomaly()` 同步写入 `resolved_at = now()`（UTC）。`status=ignored` 时 `resolved_at` 保持不变。
 
 ---
 
@@ -256,9 +271,9 @@ score_pct = (正常字段数 / 总字段数) × 100
 
 ```
 Step 1: DDL（quality_reports / quality_anomalies）
-Step 2: QualityService 字段级检查逻辑
-Step 3: 质量报告 HTML 模板
-Step 4: Quality API 端点
-Step 5: APScheduler 06:00 调度集成 + 飞书推送
+Step 2: QualityService 字段级检查逻辑 + SeverityEnum + resolved_at 填充
+Step 3: Quality API 端点（含 PUT 异常更新逻辑）
+Step 4: 质量报告 HTML 看板模板 → static/reports/quality_report_{date}.html
+Step 5: APScheduler 06:00 调度集成 + 飞书卡片推送
 Step 6: 集成测试
 ```
