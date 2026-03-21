@@ -33,8 +33,10 @@
 | 四 | `services/ai/prompts/card_format_prompt.py` | 创建 |
 | 四 | `services/ai/nl_query_service.py` | 修改 |
 | 二 | `schemas/attribution.py` | 创建 |
-| 二 | `services/attribution_service.py` | 创建 |
+| 二 | `services/ai/attribution_service.py` | 创建 |
 | 二 | `api/routes/attribution.py` | 创建 |
+| 二 | `api/dependencies.py` | 修改 |
+| 三 | `schemas/attribution.py` | 修改（补充 KnowledgeDoc） |
 | 三 | `services/knowledge_manager.py` | 创建 |
 | 三 | `api/routes/knowledge.py` | 创建 |
 | 一 | `services/feishu/config.py` | 创建 |
@@ -343,15 +345,22 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ### Task A1: 创建归因数据模型
 
 **Files:**
-- Create: `schemas/attribution.py`
-- Test: `tests/unit/test_attribution_schemas.py`
+- Modify: `schemas/attribution.py` (补充 KnowledgeDoc, KnowledgeListResult)
+- Create: `tests/unit/test_attribution_schemas.py`
 
-- [ ] **Step 1: 创建 `schemas/attribution.py`**
+**注意**: `KnowledgeDoc` 和 `KnowledgeListResult` 也放在 `schemas/attribution.py` 中（与其他 Pydantic 模型保持一致），不从 `services/knowledge_manager.py` 定义。
+
+- [ ] **Step 1: 创建 `schemas/attribution.py`（包含归因 + 知识库所有模型）**
 
 ```python
-"""归因分析数据模型"""
-from typing import Literal
+"""归因分析和知识库管理数据模型"""
+from datetime import datetime
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field
+
+
+# ============= 归因分析模型 =============
 
 
 class Factor(BaseModel):
@@ -375,13 +384,30 @@ class AttributionResult(BaseModel):
     raw_data: dict = Field(default_factory=dict, description="原始数据（调试用）")
 
 
-class KnowledgeListResult(BaseModel):
-    """通用列表结果（用于知识库分页）"""
+# ============= 知识库管理模型 =============
 
-    items: list = Field(description="列表项")
-    total: int = Field(description="总数")
-    page: int = Field(description="当前页")
-    page_size: int = Field(description="每页数量")
+
+class KnowledgeDoc(BaseModel):
+    """知识库文档模型"""
+
+    id: str
+    content: str
+    category: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    version: int = 1
+    created_at: datetime
+    updated_at: datetime
+    is_active: bool = True
+    change_log: str = ""
+
+
+class KnowledgeListResult(BaseModel):
+    """知识库分页结果"""
+
+    items: list[KnowledgeDoc]
+    total: int
+    page: int
+    page_size: int
 ```
 
 - [ ] **Step 2: 创建 `tests/unit/test_attribution_schemas.py`**
@@ -449,13 +475,14 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ### Task A2: 实现 AttributionService
 
 **Files:**
-- Create: `services/attribution_service.py`
+- Create: `services/ai/attribution_service.py`
 - Test: `tests/unit/test_attribution_service.py`
 
-- [ ] **Step 1: 创建 `services/attribution_service.py`**
+- [ ] **Step 1: 创建 `services/ai/attribution_service.py`**
 
 ```python
 """归因分析服务"""
+import logging
 import time
 import json
 import re
@@ -465,6 +492,8 @@ from schemas.attribution import AttributionResult, Factor
 from services.ai.ollama_service import OllamaService
 from services.ai.prompts import ATTRIBUTION_SYSTEM_PROMPT
 from services.clickhouse_service import ClickHouseDataService
+
+logger = logging.getLogger(__name__)
 
 
 def calc_confidence(sql_result: list[dict], dimension: str) -> float:
@@ -614,9 +643,11 @@ class AttributionService:
                     current_date = str(dates_result[0].get("stat_date", ""))
                     prev_date = str(dates_result[1].get("stat_date", ""))
                 else:
+                    logger.warning("Insufficient date data in dm_ar_summary, using fallback dates")
                     current_date = "2023-10-31"
                     prev_date = "2023-09-30"
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to query dates, using fallback dates: {e}")
                 current_date = "2023-10-31"
                 prev_date = "2023-09-30"
 
@@ -682,7 +713,8 @@ class AttributionService:
 """测试归因分析服务"""
 import pytest
 from unittest.mock import MagicMock, patch
-from services.attribution_service import AttributionService, calc_confidence
+from services.ai.attribution_service import AttributionService
+from services.ai.attribution_service import calc_confidence
 from schemas.attribution import AttributionResult
 
 
@@ -737,7 +769,7 @@ Expected: PASS (8 tests)
 - [ ] **Step 4: Commit**
 
 ```bash
-git add services/attribution_service.py tests/unit/test_attribution_service.py
+git add services/ai/attribution_service.py tests/unit/test_attribution_service.py
 git commit -m "feat: implement AttributionService with confidence scoring
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
@@ -752,15 +784,15 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 - Modify: `api/main.py` (注册 router)
 - Test: `tests/integration/test_attribution_api.py`
 
-- [ ] **Step 1: 创建 `api/routes/attribution.py`**
+- [ ] **Step 1: 创建 `api/routes/attribution.py`（使用 DI 模式）**
 
 ```python
 """归因分析 API 路由"""
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from schemas.attribution import AttributionResult
-from services.attribution_service import AttributionService
+from api.dependencies import AttributionServiceDep
 
 router = APIRouter()
 
@@ -770,7 +802,10 @@ class AttributionRequest(BaseModel):
 
 
 @router.post("/analyze", response_model=AttributionResult)
-async def analyze(question: AttributionRequest) -> AttributionResult:
+async def analyze(
+    question: AttributionRequest,
+    service: AttributionServiceDep,
+) -> AttributionResult:
     """归因分析
 
     分析财务指标异动原因，返回 Top 归因因子。
@@ -779,26 +814,38 @@ async def analyze(question: AttributionRequest) -> AttributionResult:
     - "为什么本月逾期率上升了"
     - "为什么收入下降了"
     """
-    service = AttributionService()
-    result = service.analyze(question.question)
-    return result
+    return service.analyze(question.question)
 ```
 
-- [ ] **Step 2: 修改 `api/main.py`，注册归因 router**
+- [ ] **Step 2: 修改 `api/dependencies.py`，添加 AttributionService DI**
 
-找到现有的 `api_router` 定义区域，添加：
+在文件末尾添加：
+
+```python
+from typing import Annotated
+from fastapi import Depends
+from services.ai.attribution_service import AttributionService
+
+def get_attribution_service() -> AttributionService:
+    return AttributionService()
+
+AttributionServiceDep = Annotated[AttributionService, Depends(get_attribution_service)]
+```
+
+- [ ] **Step 3: 修改 `api/main.py`，注册归因 router**
+
+找到 `api_router` 定义区域，添加：
 
 ```python
 from api.routes import ar, query, ai, attribution  # 添加 attribution
 
-api_router = APIRouter()
 api_router.include_router(ar.router, prefix="/ar", tags=["AR"])
 api_router.include_router(query.router, prefix="/query", tags=["Query"])
 api_router.include_router(ai.router, prefix="/ai", tags=["AI"])
 api_router.include_router(attribution.router, prefix="/attribution", tags=["Attribution"])  # 新增
 ```
 
-- [ ] **Step 3: 创建 `tests/integration/test_attribution_api.py`**
+- [ ] **Step 4: 创建 `tests/integration/test_attribution_api.py`**
 
 ```python
 """测试归因分析 API"""
@@ -814,7 +861,6 @@ def test_analyze_endpoint_exists():
         "/api/v1/attribution/analyze",
         json={"question": "为什么本月逾期率上升了"},
     )
-    # 200 or 500 (if Ollama not running) — just check endpoint exists
     assert response.status_code in (200, 500)
     if response.status_code == 200:
         data = response.json()
@@ -823,15 +869,15 @@ def test_analyze_endpoint_exists():
         assert "overall_confidence" in data
 ```
 
-- [ ] **Step 4: 运行测试**
+- [ ] **Step 5: 运行测试**
 
 Run: `uv run pytest tests/integration/test_attribution_api.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add api/routes/attribution.py api/main.py tests/integration/test_attribution_api.py
+git add api/routes/attribution.py api/main.py api/dependencies.py tests/integration/test_attribution_api.py
 git commit -m "feat: add attribution analysis API endpoint
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
@@ -847,43 +893,138 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 - Create: `services/knowledge_manager.py`
 - Test: `tests/unit/test_knowledge_manager.py`
 
-- [ ] **Step 1: 创建 `services/knowledge_manager.py`**
+- [ ] **Step 1: 创建 `services/knowledge_manager.py`（KnowledgeDoc 从 schemas 导入，新增迁移方法）**
 
 ```python
 """知识库版本管理服务"""
 import json
-import hashlib
+import logging
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
 from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
 
 from api.config import get_settings
+from schemas.attribution import KnowledgeDoc, KnowledgeListResult
 
+logger = logging.getLogger(__name__)
 
-class KnowledgeDoc(BaseModel):
-    """知识库文档模型"""
-
-    id: str
-    content: str
-    category: str
-    metadata: dict[str, Any]
-    version: int = 1
-    created_at: datetime
-    updated_at: datetime
-    is_active: bool = True
-    change_log: str = ""
-
-
-class KnowledgeListResult(BaseModel):
-    items: list[KnowledgeDoc]
-    total: int
-    page: int
-    page_size: int
+PRODUCTION_ALIAS = "finboss_knowledge"
+STAGING_NAME = "finboss_knowledge_v2"
 
 
 class KnowledgeManager:
+    """知识库版本管理服务"""
+
+    def __init__(self):
+        settings = get_settings()
+        self.host = settings.milvus.host
+        self.port = settings.milvus.port
+        self.collection_name = settings.milvus.collection_name
+        self._embedding_url = "http://localhost:11434/api/embeddings"
+
+    def connect(self) -> None:
+        connections.connect(host=self.host, port=self.port)
+
+    def migrate_collection(self) -> None:
+        """
+        幂等迁移：Phase 2 → v2（带版本字段）
+        使用 Alias 实现零停机原子切换。
+        """
+        # 1. 检查是否已完成迁移（幂等）
+        try:
+            alias = utility.get_collection_alias(PRODUCTION_ALIAS)
+            if alias == STAGING_NAME:
+                logger.info("Migration already completed, skipping.")
+                return
+        except Exception:
+            pass  # 别名不存在，继续迁移
+
+        # 2. 创建 v2 集合（含版本字段）
+        self._create_versioned_collection(STAGING_NAME)
+
+        # 3. 迁移 Phase 2 数据（如存在）
+        try:
+            old_collection = Collection("finboss_knowledge")
+            old_collection.load()
+            results = old_collection.query(
+                expr="is_active == true || version > 0",
+                output_fields=["id", "content", "vector", "category", "metadata"]
+            )
+            self._migrate_docs_to_v2(results)
+        except Exception as e:
+            logger.warning(f"Phase 2 data not found, skipping migration: {e}")
+
+        # 4. 原子切换别名
+        try:
+            utility.drop_alias(PRODUCTION_ALIAS)
+        except Exception:
+            pass
+        utility.create_alias(STAGING_NAME, PRODUCTION_ALIAS)
+        logger.info("Migration completed successfully.")
+
+    def _create_versioned_collection(self, name: str, dimension: int = 768) -> None:
+        """创建含版本字段的集合"""
+        fields = [
+            FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=64, is_primary=True),
+            FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=4096),
+            FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=dimension),
+            FieldSchema(name="category", dtype=DataType.VARCHAR, max_length=64),
+            FieldSchema(name="metadata", dtype=DataType.VARCHAR, max_length=1024),
+            FieldSchema(name="version", dtype=DataType.INT32, default_value=1),
+            FieldSchema(name="created_at", dtype=DataType.DATETIME),
+            FieldSchema(name="updated_at", dtype=DataType.DATETIME),
+            FieldSchema(name="is_active", dtype=DataType.BOOL, default_value=True),
+            FieldSchema(name="change_log", dtype=DataType.VARCHAR, max_length=1024),
+        ]
+        schema = CollectionSchema(fields=fields, description="FinBoss Knowledge Base v2")
+        collection = Collection(name=name, schema=schema)
+        collection.create_index(
+            field_name="vector",
+            index_params={"index_type": "IVF_FLAT", "metric_type": "L2", "params": {"nlist": 128}},
+        )
+        collection.load()
+
+    def _migrate_docs_to_v2(self, docs: list[dict]) -> None:
+        """将 Phase 2 文档迁移到 v2 集合"""
+        if not docs:
+            return
+        collection = Collection(STAGING_NAME)
+        now = datetime.now()
+        for doc in docs:
+            entities = [
+                [doc["id"]],
+                [doc["content"]],
+                [doc["vector"]],
+                [doc.get("category", "general")],
+                [json.dumps(doc.get("metadata", {}), ensure_ascii=False)],
+                [1],  # version
+                [now],  # created_at
+                [now],  # updated_at
+                [True],  # is_active
+                ["从 Phase 2 迁移"],
+            ]
+            collection.insert(entities)
+        collection.flush()
+
+    def _generate_embedding(self, text: str) -> list[float]:
+        import httpx
+
+        try:
+            with httpx.Client(timeout=30) as client:
+                response = client.post(
+                    self._embedding_url,
+                    json={"model": "nomic-embed-text", "prompt": text},
+                )
+                if response.status_code == 200:
+                    return response.json().get("embedding", [])
+        except Exception:
+            pass
+
+        # Fallback: 假向量（仅 POC）
+        hash_bytes = hashlib.sha256(text.encode()).digest()
+        dim = 768
+        return [float(hash_bytes[i % len(hash_bytes)] % 256) / 255.0 for i in range(dim)]
     """知识库版本管理服务"""
 
     def __init__(self):
@@ -1132,12 +1273,8 @@ class KnowledgeManager:
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
-from services.knowledge_manager import KnowledgeManager, KnowledgeDoc, calc_confidence
-
-
-class TestCalcConfidence:
-    # 复用 attribution service 的测试逻辑（避免重复）
-    pass
+from services.knowledge_manager import KnowledgeManager
+from schemas.attribution import KnowledgeDoc
 
 
 class TestKnowledgeDoc:
@@ -1290,7 +1427,7 @@ api_router.include_router(ar.router, prefix="/ar", tags=["AR"])
 api_router.include_router(query.router, prefix="/query", tags=["Query"])
 api_router.include_router(ai.router, prefix="/ai", tags=["AI"])
 api_router.include_router(attribution.router, prefix="/attribution", tags=["Attribution"])
-api_router.include_router(knowledge.router, prefix="/knowledge", tags=["Knowledge"])  # 新增
+api_router.include_router(knowledge.router, prefix="/ai/knowledge", tags=["Knowledge"])  # 新增：挂载在 /ai 下，与 spec 一致
 ```
 
 - [ ] **Step 3: 创建 `tests/integration/test_knowledge_api.py`**
@@ -1312,7 +1449,7 @@ def test_knowledge_list_endpoint_exists():
 
 def test_knowledge_create_endpoint_exists():
     response = client.post(
-        "/api/v1/knowledge",
+        "/api/v1/ai/knowledge",
         params={"content": "测试文档", "category": "test", "change_log": "test create"},
     )
     assert response.status_code in (200, 500)
@@ -1322,7 +1459,7 @@ def test_knowledge_create_endpoint_exists():
 
 
 def test_knowledge_not_found_returns_404():
-    response = client.get("/api/v1/knowledge/nonexistent_id")
+    response = client.get("/api/v1/ai/knowledge/nonexistent_id")
     assert response.status_code in (404, 500)
 ```
 
@@ -1522,10 +1659,26 @@ FEISHU_VERIFICATION_TOKEN=
 lark-oapi = ">=1.4.0,<2.0.0"
 ```
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: 更新 `config/docker-compose.yml`**
+
+飞书机器人是纯 HTTP 服务（Webhook 接收器），无需添加新 Docker 服务。
+仅需确保 FastAPI 应用端口 `8000` 已暴露：
+
+```yaml
+services:
+  finboss-api:
+    ports:
+      - "8000:8000"  # 确保已暴露
+    environment:
+      - FEISHU_APP_ID=${FEISHU_APP_ID}
+      - FEISHU_APP_SECRET=${FEISHU_APP_SECRET}
+      - FEISHU_BOT_NAME=${FEISHU_BOT_NAME}
+```
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add services/feishu/ api/config.py .env.example pyproject.toml
+git add services/feishu/ api/config.py .env.example pyproject.toml config/docker-compose.yml
 git commit -m "feat: add FeishuConfig and FeishuClient
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
@@ -1808,8 +1961,8 @@ from typing import Any
 
 from services.feishu.feishu_client import FeishuClient
 from services.feishu.card_builder import CardBuilder
-from services.nl_query_service import NLQueryService
-from services.attribution_service import AttributionService
+from services.ai.nl_query_service import NLQueryService
+from services.ai.attribution_service import AttributionService
 
 logger = logging.getLogger(__name__)
 
