@@ -70,9 +70,10 @@ finBoss/
 ├── schemas/         # Pydantic 数据模型 (raw/std/dm 三层)
 ├── pipelines/       # 数据管道 (接入/处理/数据集市)
 ├── services/       # 业务服务层
-│   └── ai/        # AI 服务 (Ollama, RAG, NLQuery)
+│   ├── ai/        # AI 服务 (Ollama, RAG, NLQuery)
+│   └── feishu/    # 飞书机器人服务
 ├── api/            # FastAPI REST 接口
-│   └── routes/     # API 路由 (ar/, query/, ai/)
+│   └── routes/     # API 路由 (ar/, query/, ai/, feishu/)
 ├── tests/          # 测试 (unit/, integration/)
 └── scripts/       # 运维脚本
 ```
@@ -94,12 +95,12 @@ finBoss/
 - [x] NL 查询 POC（自然语言 → SQL → 结果 → NL 解释）
 - [x] API 端点: `/api/v1/ai/*`
 
-### Phase 3 规划中
+### Phase 3 ✅ 企业集成与增强 (已完成)
 
-- [ ] 飞书机器人接入
-- [ ] 提示词优化
-- [ ] 归因分析 POC
-- [ ] 知识版本管理
+- [x] 飞书机器人接入（消息 + 卡片交互）
+- [x] 归因分析服务（客户 × 时间维度）
+- [x] 提示词优化（含 Few-shot Examples）
+- [x] 知识版本管理（CRUD + 版本历史 + 回滚）
 
 ## API 文档
 
@@ -132,6 +133,12 @@ finBoss/
 | `/api/v1/ai/rag/ingest` | POST | 添加知识文档 |
 | `/api/v1/ai/rag/ingest/batch` | POST | 批量添加文档 |
 | `/api/v1/ai/rag/search` | GET | 知识库检索 |
+| `/api/v1/ai/knowledge` | GET/POST | 知识库管理（版本化） |
+| `/api/v1/ai/knowledge/{id}` | GET/PUT/DELETE | 知识文档操作 |
+| `/api/v1/ai/knowledge/{id}/history` | GET | 版本历史 |
+| `/api/v1/ai/knowledge/{id}/rollback` | POST | 回滚到指定版本 |
+| `/api/v1/attribution/analyze` | POST | 归因分析 |
+| `/api/v1/feishu/events` | POST | 飞书 Webhook |
 
 ### AI 查询示例
 
