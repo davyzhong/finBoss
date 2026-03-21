@@ -117,7 +117,11 @@ class ERPCustomerConnector(ABC):
 
 ```python
 class KingdeeCustomerConnector(ERPCustomerConnector):
-    """金蝶客户连接器"""
+    """金蝶客户连接器
+
+    复用已有的 KingdeeARIngester（connectors/kingdee/client.py）进行应收数据查询。
+    客户主数据从金蝶客户主数据表获取（表名待实施团队确认金蝶实际表名）。
+    """
 
     def __init__(self, db_config: KingdeeDBConfig | None = None):
         self._config = db_config or get_kingdee_config()
@@ -129,10 +133,14 @@ class KingdeeCustomerConnector(ERPCustomerConnector):
     def fetch_customers(self) -> list[RawCustomer]:
         """从金蝶客户主数据表获取客户信息
 
-        注意：Phase 4B 仅使用 customer_id 和 customer_name。
-        其他字段（tax_id, credit_code 等）在未来 ERP 接入时按需实现。
+        表名说明：
+        - **需实施团队确认**：金蝶 ERP 的客户主数据表名（常见如 t_bd_customer、t_pm_branch 等不同版本表名不同）。
+        - Phase 4B 实现前，团队需在金蝶管理后台确认实际表名及字段映射。
+        - 此处 SQL 为占位符，标注了需要替换的位置。
         """
-        sql = """
+        # TODO(实施): 替换为实际客户主数据表名
+        customer_table = "t_bd_customer"  # ← 待确认
+        sql = f"""
         SELECT
             fitem3001 AS customer_id,
             fitem3002 AS customer_name,
@@ -140,7 +148,7 @@ class KingdeeCustomerConnector(ERPCustomerConnector):
             fitem3004 AS address,
             fitem3005 AS contact,
             fitem3006 AS phone
-        FROM t_item_3001  -- 客户主数据表（待确认实际表名）
+        FROM {customer_table}
         WHERE fitem3001 IS NOT NULL
         """
         rows = self._execute(sql)
@@ -162,9 +170,30 @@ class KingdeeCustomerConnector(ERPCustomerConnector):
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> list[RawARRecord]:
-        """从金蝶应收单表获取应收明细"""
-        # 使用已有的 KingdeeARIngester 的查询逻辑
-        pass
+        """从金蝶应收单表获取应收明细
+
+        复用 connectors/kingdee/client.py 中的 KingdeeARIngester 查询方法。
+        """
+        from connectors.kingdee.client import KingdeeARIngester
+
+        ingester = KingdeeARIngester(self._config)
+        raw_records = ingester.fetch_ar_records(start_date=start_date, end_date=end_date)
+        return [
+            RawARRecord(
+                source_system=self.source_system,
+                customer_id=r.customer_id,
+                customer_name=r.customer_name,
+                bill_no=r.bill_no,
+                bill_date=r.bill_date,
+                due_date=r.due_date,
+                bill_amount=r.bill_amount,
+                received_amount=r.received_amount,
+                is_overdue=r.is_overdue,
+                overdue_days=r.overdue_days,
+                company_code=r.company_code,
+            )
+            for r in raw_records
+        ]
 ```
 
 ---
@@ -179,7 +208,7 @@ CREATE TABLE raw.raw_customer (
     source_system String,
     customer_id   String,
     customer_name String,
-    short_name  String,
+    customer_short_name String,  -- 与 RawCustomer.customer_short_name 一致
     tax_id       String,
     credit_code  String,
     address      String,
@@ -192,7 +221,7 @@ CREATE TABLE raw.raw_customer (
 
 **标准化规则**：
 - `customer_name`：去除空格、括号内容、全角转半角
-- `short_name`：从名称提取，如「深圳市腾讯计算机系统有限公司」→「腾讯」
+- `customer_short_name`：从名称提取，如「深圳市腾讯计算机系统有限公司」→「深圳腾讯」
 - `id`：SHA256(source_system + customer_id)
 
 ### 4.2 CustomerStandardizer
@@ -226,7 +255,7 @@ class CustomerStandardizer:
         return customer.model_copy(
             update={
                 "customer_name": name,
-                "short_name": short_name,
+                "customer_short_name": short_name,
             }
         )
 
@@ -287,10 +316,12 @@ class CustomerMatcher:
                     )
 
             if len(group) > 1:
+                unified_code = self._generate_unified_code(group)
                 results.append(
                     MatchResult(
                         action="auto_merge",
                         customers=group,
+                        unified_customer_code=unified_code,
                         similarity=1.0,
                         reason="名称完全相同",
                     )
@@ -317,6 +348,18 @@ class CustomerMatcher:
 
         return min(name_sim + short_bonus, 1.0)
 
+    def _generate_unified_code(self, customers: list[RawCustomer]) -> str:
+        """为合并组生成统一客户编码
+
+        规则：取组内第一个客户的编码作为 unified_customer_code。
+        后续客户作为 raw_customer_ids 存入 dm_customer360。
+        这样保证同一个合并组内所有成员共享唯一编码，且编码值可预测。
+        """
+        first = customers[0]
+        import hashlib
+        raw = f"{first.source_system}:{first.customer_id}"
+        return f"C360_{hashlib.sha256(raw.encode()).hexdigest()[:12]}"
+
     def _name_similarity(self, name1: str, name2: str) -> float:
         """基于字符串相似度计算名称相似度"""
         import difflib
@@ -336,6 +379,7 @@ class MatchResult(BaseModel):
     """匹配结果"""
     action: MatchAction
     customers: list[RawCustomer]
+    unified_customer_code: str | None = None  # auto_merge 时填充，取组内第一个客户编码
     similarity: float
     reason: str
     created_at: datetime = Field(default_factory=datetime.now)
@@ -413,7 +457,26 @@ def build_merge_card(result: MatchResult) -> dict:
     }
 ```
 
-### 6.3 可逆合并
+### 6.3 飞书通知接口
+
+`FeishuClient` 新增合并通知方法：
+
+```python
+def send_merge_notification(self, queue_items: list[MergeQueueItem]) -> bool:
+    """发送合并复核通知卡片
+
+    Args:
+        queue_items: 待复核的合并队列项列表
+    Returns:
+        是否发送成功
+    """
+    for item in queue_items:
+        card = build_merge_card(item.match_result)
+        # 发送给预设的运营通知渠道（飞书 OpenID 或群机器人）
+        self.send_card_to_channel(card, channel_id=self._ops_channel_id)
+```
+
+飞书渠道 ID 通过 `FEISHU_OPS_CHANNEL_ID` 环境变量配置。
 
 合并结果写入 `dm_customer360`，同时记录 `merge_history` 表：
 
@@ -456,7 +519,8 @@ CREATE TABLE dm.dm_customer360 (
     last_ar_date           Date,            -- 最近一笔应收日期
     first_coop_date        Date,            -- 首次合作日期
     risk_level             String,           -- 高/中/低
-    merge_status           String,           -- confirmed/pending/auto
+    merge_status           String,           -- pending/confirmed/auto_merged
+    -- 注意：rejected 状态仅存在于 merge_queue，dm_customer360 不存储 rejected 记录
     stat_date              Date,
     updated_at             DateTime,
     PRIMARY KEY (unified_customer_code, stat_date)
@@ -681,6 +745,27 @@ def calc_risk_level(score: float, overdue_rate: float) -> str:
 
 ### 9.1 调度流程
 
+**调度工具**：使用 `APScheduler`（项目已有 `schedule` 相关依赖），每日 02:00 执行。
+
+```python
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+scheduler = AsyncIOScheduler()
+
+def daily_customer360_job():
+    # 步骤1-5
+    ...
+
+scheduler.add_job(
+    daily_customer360_job,
+    "cron",
+    hour=2,
+    minute=0,
+    id="customer360_daily",
+)
+scheduler.start()
+```
+
 ```
 每日 02:00
   │
@@ -693,7 +778,7 @@ def calc_risk_level(score: float, overdue_rate: float) -> str:
   ├─ 步骤3: 执行匹配引擎
   │       CustomerMatcher.match()
   │         ├─ auto_merge → dm_customer360
-  │         └─ pending → customer_merge_queue
+  │         └─ pending → merge_queue
   │
   ├─ 步骤4: 飞书通知（有待复核时）
   │       FeishuClient.send_merge_notification()
@@ -773,7 +858,8 @@ class Customer360Record(BaseModel):
     overdue_rate: float
     payment_score: float
     risk_level: Literal["高", "中", "低"]
-    merge_status: Literal["confirmed", "pending", "auto"]
+    merge_status: Literal["pending", "confirmed", "auto_merged"]
+    # 注：rejected 不写入 dm_customer360（已在 merge_queue 标记，无需落地）
     stat_date: date
     updated_at: datetime
 
@@ -797,7 +883,7 @@ class MergeQueueItem(BaseModel):
     reason: str
     customers: list[RawCustomer]
     created_at: datetime
-    status: Literal["pending", "confirmed", "rejected"]
+    status: Literal["pending", "confirmed", "rejected", "auto_merged"]
 ```
 
 ---
@@ -808,6 +894,8 @@ class MergeQueueItem(BaseModel):
 2. **仅金蝶 ERP**：其他 ERP 连接器预留接口，待实际接入时实现
 3. **每日批次**：不支持准实时更新（设计为 T+1）
 4. **相似度阈值固定**：0.85/0.95 阈值在初期可能需要调整
+5. **匹配引擎 O(n²)**：`CustomerMatcher.match()` 为双层循环，3000+ 客户时需引入分块（blocking）策略优化
+6. **金蝶客户表名待确认**：Phase 4B 实现前需确认金蝶实际客户主数据表名
 
 ---
 
@@ -819,6 +907,9 @@ Phase 4B 依赖
 erp_connector (抽象接口)
   └─ KingdeeCustomerConnector (Phase 4B)
         └─ KingdeeDBConfig (Phase 1)
+
+scheduler
+  └─ APScheduler (pip install)
 
 customer_standardizer
   └─ unidecode (pip install)
