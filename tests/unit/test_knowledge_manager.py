@@ -152,7 +152,19 @@ class TestKnowledgeManagerCRUD:
     """KnowledgeManager CRUD 行为测试（mock Collection）"""
 
     @pytest.fixture
-    def km(self):
+    def mock_connections(self):
+        """Patch connections for entire test scope (auto-activated per test)."""
+        from unittest.mock import patch
+
+        with patch("services.knowledge_manager.connections") as mock:
+            yield mock
+
+    @pytest.fixture
+    def mock_collection(self):
+        return MagicMock()
+
+    @pytest.fixture
+    def km(self, mock_connections):
         with patch("services.knowledge_manager.get_settings") as mock_settings:
             mock_settings.return_value.milvus.host = "localhost"
             mock_settings.return_value.milvus.port = 19530
@@ -160,10 +172,6 @@ class TestKnowledgeManagerCRUD:
             from services.knowledge_manager import KnowledgeManager
 
             return KnowledgeManager()
-
-    @pytest.fixture
-    def mock_collection(self):
-        return MagicMock()
 
     def test_list_returns_paginated_results(self, km, mock_collection):
         """测试 list 分页返回"""
