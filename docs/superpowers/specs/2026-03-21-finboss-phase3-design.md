@@ -12,7 +12,7 @@ Phase 3 在 Phase 2 AI 能力验证（POC）的基础上，实现企业级集成
 
 **Phase 3 完成标准**：
 - [ ] 飞书机器人支持消息 + 卡片交互
-- [ ] 归因分析覆盖客户 × 产品 × 时间三个维度
+- [ ] 归因分析覆盖客户 × 时间两个维度（产品维度待数据层就绪后扩展）
 - [ ] 提示词针对财务场景优化（含 few-shot examples）
 - [ ] 知识库支持完整 CRUD + 版本历史 + 回滚
 
@@ -145,26 +145,29 @@ async def handle_feishu_event(request: Request):
 
 ### 3.6 消息处理流程
 
+**重要：飞书要求 Webhook 在 3 秒内响应。** 由于 LLM 推理耗时较长（10-60s），必须使用异步模式：
+
 ```
 用户 @机器人 "本月应收总额"
     │
     ├─→ 飞书服务器 POST /api/v1/feishu/events
     │
-    ├─→ EventHandler.dispatch()
-    │       │
-    │       └─→ NLQueryHandler.handle()
-    │               │
-    │               ├─→ NLQueryService.query("本月应收总额")
-    │               │       │
-    │               │       ├─→ RAGService.search()  [知识检索]
-    │               │       ├─→ OllamaService.generate() [SQL生成]
-    │               │       ├─→ ClickHouse.execute() [执行SQL]
-    │               │       └─→ OllamaService.generate() [NL解释]
-    │               │
-    │               └─→ CardBuilder.build_query_result_card(result)
+    ├─→ 立即返回 200 OK（飞书要求 3s 内响应）
     │
-    └─→ FeishuClient.reply_card(message_id, card)
+    └─→ 后台任务（asyncio.create_task）
+            │
+            ├─→ NLQueryService.query("本月应收总额")
+            │       ├─→ RAGService.search()
+            │       ├─→ OllamaService.generate() [SQL生成]
+            │       ├─→ ClickHouse.execute()
+            │       └─→ OllamaService.generate() [NL解释]
+            │
+            ├─→ CardBuilder.build_query_result_card(result)
+            │
+            └─→ FeishuClient.send_card(receive_id, card)
 ```
+
+**消息去重**：飞书可能重试 Webhook 推送，使用 `message_id` 做幂等去重（内存 dict 或 Redis）。
 
 ### 3.7 按钮回调处理
 
@@ -190,11 +193,11 @@ async def handle_feishu_event(request: Request):
 
 ### 4.1 分析维度
 
-| 维度 | 分析内容 | 数据来源 |
-|------|----------|----------|
-| 客户维度 | 大客户贡献变化、新客户流失、欠款回收 | `dm.dm_customer_ar` |
-| 产品维度 | 产品线销售变化、账期分布 | `std.std_ar` (需含 product_category) |
-| 时间维度 | 月度环比、同比、同期对比 | `dm.dm_ar_summary` |
+| 维度 | 分析内容 | 数据来源 | 状态 |
+|------|----------|----------|------|
+| 客户维度 | 大客户贡献变化、新客户流失、欠款回收 | `dm.dm_customer_ar` | Phase 3 实现 |
+| 时间维度 | 月度环比、同比、同期对比 | `dm.dm_ar_summary` | Phase 3 实现 |
+| 产品维度 | 产品线销售变化、账期分布 | `std.std_ar` (需含 product_category) | **待 Phase 4**（需扩展 Kingdee CDC pipeline 添加 product 字段） |
 
 ### 4.2 归因分析流程
 
@@ -264,37 +267,64 @@ class AttributionResult(BaseModel):
     raw_data: dict             # 原始数据（调试用）
 ```
 
+**置信度评分算法**（规则计算）：
+
+```python
+def calc_confidence(sql_result: list[dict], hypothesis_dimension: str) -> float:
+    """
+    基于 SQL 结果集质量计算置信度：
+    - 有数据行：+0.3
+    - 变化幅度 > 10%：+0.3
+    - 变化幅度 > 30%：+0.2（累加）
+    - 维度内 TOP3 数据覆盖 > 50% 总变化：+0.2
+    """
+    base = 0.0
+    if len(sql_result) > 0:
+        base += 0.3
+        # 计算变化幅度
+        deltas = [abs(r.get("overdue_delta", 0)) for r in sql_result]
+        if deltas:
+            max_delta = max(deltas)
+            total_delta = sum(deltas)
+            if total_delta > 0:
+                coverage = max_delta / total_delta
+                if coverage > 0.3:
+                    base += 0.3
+                if coverage > 0.5:
+                    base += 0.2
+    return min(base, 1.0)
+```
+
+**Overall Confidence**：各维度置信度的加权平均，客户维度权重 0.5，时间维度权重 0.5（产品维度 Phase 4 再加入）。
+
 ### 4.6 SQL 模板（ClickHouse）
 
 **客户维度 - 逾期贡献度环比**：
+（数据源：`dm.dm_customer_ar`，主键：`(stat_date, customer_code, company_code)`）
+
 ```sql
 SELECT
     customer_name,
-    overdue_amount_curr,
-    overdue_amount_prev,
-    overdue_amount_curr - overdue_amount_prev AS overdue_delta,
-    (overdue_amount_curr - overdue_amount_prev) / overdue_amount_prev AS change_rate
-FROM (
-    SELECT
-        customer_name,
-        SUM(overdue_amount) AS overdue_amount_curr
-    FROM dm.dm_customer_ar
-    WHERE stat_date = '{current_date}'
-    GROUP BY customer_name
-) CURRENT
-LEFT JOIN (
-    SELECT
-        customer_name,
-        SUM(overdue_amount) AS overdue_amount_prev
-    FROM dm.dm_customer_ar
-    WHERE stat_date = '{prev_date}'
-    GROUP BY customer_name
-) PREV ON CURRENT.customer_name = PREV.customer_name
+    curr.overdue_amount AS overdue_amount_curr,
+    prev.overdue_amount AS overdue_amount_prev,
+    curr.overdue_amount - coalesce(prev.overdue_amount, 0) AS overdue_delta,
+    curr.overdue_rate AS overdue_rate_curr,
+    prev.overdue_rate AS overdue_rate_prev,
+    curr.total_ar_amount AS total_ar_curr,
+    curr.overdue_count AS overdue_count_curr
+FROM dm.dm_customer_ar curr
+LEFT JOIN dm.dm_customer_ar prev
+    ON curr.customer_code = prev.customer_code
+    AND curr.company_code = prev.company_code
+    AND prev.stat_date = toDate('{prev_date}')
+WHERE curr.stat_date = toDate('{current_date}')
 ORDER BY overdue_delta DESC
 LIMIT 10
 ```
 
 **时间维度 - 月度逾期率趋势**：
+（数据源：`dm.dm_ar_summary`，主键：`(stat_date, company_code)`）
+
 ```sql
 SELECT
     stat_date,
@@ -322,23 +352,65 @@ ORDER BY stat_date
 
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
-| `id` | VARCHAR(64) | 文档ID（主键） |
-| `content` | VARCHAR(4096) | 文档内容 |
-| `vector` | FLOAT_VECTOR(768) | 向量 |
-| `category` | VARCHAR(64) | 分类 |
-| `metadata` | VARCHAR(1024) | JSON 元数据 |
-| `version` | INT32 | 版本号（递增） |
-| `created_at` | DATETIME | 创建时间 |
-| `updated_at` | DATETIME | 更新时间 |
-| `is_active` | BOOL | 是否当前活跃版本 |
-| `change_log` | VARCHAR(1024) | 变更说明 |
+| `id` | VARCHAR(64) | 文档ID（主键，Phase 2 已有） |
+| `content` | VARCHAR(4096) | 文档内容（Phase 2 已有） |
+| `vector` | FLOAT_VECTOR(768) | 向量（Phase 2 已有） |
+| `category` | VARCHAR(64) | 分类（Phase 2 已有） |
+| `metadata` | VARCHAR(1024) | JSON 元数据（Phase 2 已有） |
+| `version` | INT32 | 版本号（新增，默认为 1） |
+| `created_at` | DATETIME | 创建时间（新增） |
+| `updated_at` | DATETIME | 更新时间（新增） |
+| `is_active` | BOOL | 是否当前活跃版本（新增，默认为 True） |
+| `change_log` | VARCHAR(1024) | 变更说明（新增） |
 
-### 5.3 版本策略
+**版本号策略**：
+- 全局自增，每次 CREATE 或 UPDATE 操作时 +1
+- 所有历史版本保留（`is_active` 标记当前活跃版本）
+- Rollback 操作生成新版本（内容来自历史版本），而非覆盖
 
-- **每次 UPDATE**: 软更新（`is_active=false` 旧版本，`is_active=true` 新版本）
-- **版本号**: 全局自增，每次更新 +1
+### 5.3 集合迁移策略
+
+**注意**：Phase 2 已存在数据需迁移。
+
+```python
+def migrate_collection(self, target_dimension: int = 768) -> None:
+    """迁移 Phase 2 集合到带版本字段的新集合"""
+    old_name = self.collection_name  # "finboss_knowledge"
+    new_name = f"{old_name}_v2"
+
+    # 1. 检查是否存在 v2 集合（幂等）
+    if utility.has_collection(new_name):
+        return
+
+    # 2. 创建新集合（含版本字段）
+    self._create_versioned_collection(new_name, dimension=target_dimension)
+
+    # 3. 读取旧集合数据，迁移并插入新集合
+    old_collection = Collection(old_name)
+    old_collection.load()
+    results = old_collection.query(expr="is_active == true || version > 0", output_fields=["id", "content", "vector", "category", "metadata"])
+
+    for doc in results:
+        # 补充新字段（Phase 2 数据默认为 version=1, is_active=True）
+        doc["version"] = doc.get("version", 1)
+        doc["is_active"] = doc.get("is_active", True)
+        doc["created_at"] = doc.get("created_at", datetime.now())
+        doc["updated_at"] = doc.get("updated_at", datetime.now())
+        doc["change_log"] = doc.get("change_log", "从 Phase 2 迁移")
+
+    # 4. 切换：删除旧集合，重命名新集合
+    utility.drop_collection(old_name)
+    utility.rename_collection(new_name, old_name)
+```
+
+**幂等保证**：迁移脚本可重复执行，不丢失数据。
+
+### 5.4 版本策略
+
+- **每次 UPDATE**: 软更新（`is_active=false` 旧版本，`is_active=true` 新版本，version +1）
 - **DELETE**: 软删除（`is_active=false`），不真正删除向量数据
-- **Rollback**: 将指定历史版本设为 `is_active=true`，生成新版本记录
+- **Rollback**: 将指定历史版本内容复制为新版本（version +1），保持线性历史
+- **版本历史查询**: `WHERE id = '{doc_id}' ORDER BY version DESC`
 
 ### 5.4 核心组件
 
@@ -398,15 +470,19 @@ class KnowledgeManager:
 
 ### 5.6 API 端点
 
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/api/v1/ai/knowledge` | GET | 分页列表（支持 category 过滤） |
-| `/api/v1/ai/knowledge` | POST | 创建文档 |
-| `/api/v1/ai/knowledge/{id}` | GET | 获取文档详情 |
-| `/api/v1/ai/knowledge/{id}` | PUT | 更新文档 |
-| `/api/v1/ai/knowledge/{id}` | DELETE | 软删除 |
-| `/api/v1/ai/knowledge/{id}/history` | GET | 版本历史 |
-| `/api/v1/ai/knowledge/{id}/rollback` | POST | 回滚到指定版本 |
+**端点策略**：新增 `/api/v1/ai/knowledge` 端点，**与现有** `/api/v1/ai/rag/*` 端点共存，不破坏现有调用方。
+
+| 端点 | 方法 | 描述 | 状态 |
+|------|------|------|------|
+| `/api/v1/ai/knowledge` | GET | 分页列表（支持 category 过滤） | 新增 |
+| `/api/v1/ai/knowledge` | POST | 创建文档 | 新增 |
+| `/api/v1/ai/knowledge/{id}` | GET | 获取文档详情（含当前版本） | 新增 |
+| `/api/v1/ai/knowledge/{id}` | PUT | 更新文档（生成新版本） | 新增 |
+| `/api/v1/ai/knowledge/{id}` | DELETE | 软删除 | 新增 |
+| `/api/v1/ai/knowledge/{id}/history` | GET | 版本历史 | 新增 |
+| `/api/v1/ai/knowledge/{id}/rollback` | POST | 回滚到指定版本 | 新增 |
+| `/api/v1/ai/rag/ingest` | POST | 兼容 Phase 2（透传到 KnowledgeManager.create） | 现有 |
+| `/api/v1/ai/rag/search` | GET | 兼容 Phase 2（仅搜 is_active=true 的文档） | 现有 |
 
 ---
 
