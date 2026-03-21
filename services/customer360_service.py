@@ -7,6 +7,7 @@ from typing import Any
 
 from schemas.customer360 import (
     Customer360Record,
+    Customer360Summary,
     CustomerDistribution,
     CustomerMergeQueue,
     CustomerTrend,
@@ -241,3 +242,51 @@ class Customer360Service:
         if items:
             ch = self._get_ch_service()
             ch.insert_merge_queue(items)
+
+    def get_summary(self, stat_date: date | None = None) -> Customer360Summary:
+        """管理层视角客户360汇总"""
+        d = stat_date or date.today()
+        return self._get_ch_service().get_customer360_summary(d)
+
+    def get_distribution(self, stat_date: date | None = None) -> CustomerDistribution:
+        """客户分布数据"""
+        d = stat_date or date.today()
+        return self._get_ch_service().get_customer360_distribution(d)
+
+    def get_trend(self, months: int = 12) -> CustomerTrend:
+        """客户/应收趋势"""
+        return self._get_ch_service().get_customer360_trend(months)
+
+    def get_customer_detail(self, customer_code: str) -> dict[str, Any]:
+        """单个客户360详情"""
+        return self._get_ch_service().get_customer360_detail(customer_code)
+
+    def get_merge_queue(self, status: str = "pending") -> list[CustomerMergeQueue]:
+        """获取合并复核队列"""
+        return self._get_ch_service().get_merge_queue(status)
+
+    def confirm_merge(self, queue_id: str) -> dict[str, Any]:
+        """确认合并"""
+        return self._get_ch_service().confirm_merge(queue_id, operator="api")
+
+    def reject_merge(self, queue_id: str) -> dict[str, Any]:
+        """拒绝合并"""
+        return self._get_ch_service().reject_merge(queue_id, operator="api")
+
+    def undo_merge(
+        self,
+        unified_customer_code: str,
+        original_customer_id: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """撤销合并"""
+        return self._get_ch_service().undo_merge(
+            unified_customer_code=unified_customer_code,
+            original_customer_id=original_customer_id,
+            operator="api",
+            reason=reason,
+        )
+
+    def get_attribution_data(self, start_date: date, end_date: date) -> dict[str, Any]:
+        """AI 归因数据"""
+        return self._get_ch_service().get_customer_attribution(start_date, end_date)
