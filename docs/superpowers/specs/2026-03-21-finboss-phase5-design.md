@@ -1,8 +1,10 @@
 # FinBoss Phase 5 - 预警报表与自动化报告
 
-> 版本：v1.0
+> 版本：v1.1
 > 日期：2026-03-21
-> 状态：草稿
+> 状态：待评审
+> Changelog:
+> - v1.1: 修复评审指出的指标定义缺失、02:00竞争、环比计算逻辑、业务员通道延期、recipient配置
 
 ---
 
@@ -86,13 +88,17 @@ class AlertRule(BaseModel):
 
 系统初始化时预置以下规则（可通过 API 禁用）：
 
-| 规则名称 | 指标 | 条件 | 阈值 | 级别 |
-|---------|------|------|------|------|
-| 客户逾期率超标 | overdue_rate | > | 0.3 | 高 |
-| 单客户逾期金额超标 | overdue_amount | > | 1000000 | 高 |
-| 逾期率月环比恶化 | overdue_rate_delta | > | 0.1 | 中 |
-| 新增逾期客户 | new_overdue_count | > | 5 | 中 |
-| 账龄超90天占比高 | aging_90pct | > | 0.2 | 高 |
+| 规则名称 | 指标 | 条件 | 阈值 | 级别 | ClickHouse 查询逻辑 |
+|---------|------|------|------|------|-------------------|
+| 客户逾期率超标 | overdue_rate | > | 0.3 | 高 | `ar_overdue / ar_total AS overdue_rate` from `dm_customer360` |
+| 单客户逾期金额超标 | overdue_amount | > | 1000000 | 高 | `ar_overdue AS overdue_amount` from `dm_customer360` |
+| 逾期率周环比恶化 | overdue_rate_delta | > | 0.05 | 中 | `(本周逾期率 - 上周逾期率)` from 2个 stat_date 的 `dm_customer360` JOIN |
+| 新增逾期客户 | new_overdue_count | > | 5 | 中 | COUNT WHERE `ar_overdue > 0` AND `stat_date = today` AND NOT EXISTS last week |
+| 账龄超90天占比高 | aging_90pct | > | 0.2 | 高 | SUM(IF(aging_days > 90, ar_amount, 0)) / SUM(ar_amount) |
+
+**`overdue_rate_delta` 计算说明**：取最近两个有数据的 `stat_date`（通常为今天和昨天），计算 `ar_overdue / ar_total` 的差值。
+
+**`new_overdue_count` 计算说明**：今日 `ar_overdue > 0` 且昨日 `ar_overdue = 0` 的客户数。
 
 ### 3.3 调度逻辑（每日 09:00）
 
@@ -114,7 +120,7 @@ AlertService.send_summary(alert_history_list)
     │
     ├── 按级别分组（高/中/低）
     ├── 构建飞书卡片（汇总表）
-    └── FeishuClient.send_card() → 飞书运维群
+    └── FeishuClient.send_card_to_channel(card, channel_id=FEISHU_MGMT_CHANNEL_ID)
 ```
 
 ### 3.4 飞书卡片格式
@@ -140,7 +146,8 @@ AlertService.send_summary(alert_history_list)
 
 ### 4.2 生成时机
 
-- **每日 02:00**（随数据刷新后）：`DashboardService.generate()` → 写入 `static/reports/dashboard_{date}.html`
+- **每日 02:30**（Phase 4B `customer360_refresh` 在 02:00 执行完毕）：`DashboardService.generate()` → 写入 `static/reports/dashboard_{date}.html`
+  - 注意：Phase 4B 调度在 02:00，两者间隔 30 分钟避免竞争
 - **手动触发**：`POST /api/v1/reports/dashboard/generate`
 - **访问**：`GET /static/reports/dashboard_latest.html`（软链接指向最新）
 
@@ -162,19 +169,30 @@ AlertService.send_summary(alert_history_list)
 ### 5.2 管理层报告内容
 
 - AR 概览（总额/逾期/逾期率）
-- 同比/环比变化
-- 集中度变化
+- **环比**：与上周 / 上月相比（取上一 `stat_date` 的 `dm_customer360` 数据做差值）
+- **同比**（仅月报）：与去年同月相比（取 12 个月前的 `stat_date` 数据）
+- 集中度变化（Top 10 集中度与上周/月对比）
 - 风险客户 TOP 10
 - 本周/月新增加逾期客户
 
+**环比计算**：从 `dm_customer360` 按 `stat_date` 分区，取最近两个分区做 JOIN：
+```sql
+SELECT
+    t1.ar_total - t0.ar_total       AS ar_total_delta,
+    t1.ar_overdue - t0.ar_overdue   AS overdue_delta,
+    t1.overdue_rate - t0.overdue_rate AS overdue_rate_delta
+FROM dm_customer360 t1
+JOIN dm_customer360 t0
+  ON t1.unified_customer_code = t0.unified_customer_code
+ AND t0.stat_date = (SELECT MAX(stat_date) FROM dm_customer360 WHERE stat_date < t1.stat_date)
+WHERE t1.stat_date = {current_stat_date}
+```
+
 ### 5.3 业务员报告内容
 
-每个业务员只收到自己负责的客户数据：
-- 自己的 AR 总额 / 逾期额 / 逾期率
-- 自己负责的逾期客户列表
-- 与公司平均对比
+> **注意**：`dm_customer360` 当前版本无 `salesperson` 字段，业务员通道在本阶段**不实现**。业务员报告在 `dm_customer360` 增加 `salesperson` 字段（Phase 6 或 ERP 字段映射扩展）后再启用。
 
-业务员识别方式：从 `dm_customer360` 表的 `salesperson` 字段（如有）或从 `raw.raw_customer` 表读取 `contact` 字段对应的业务员 ID。**注意**：若 ERP 中无此字段，报告仅发送管理层版本，业务员通道不启用。
+当前阶段报告仅支持**管理层通道**：`FEISHU_MGMT_CHANNEL_ID`（飞书群 ID）推送至财务总监群。
 
 ### 5.4 发送流程
 
@@ -249,12 +267,26 @@ CREATE TABLE dm.report_records (
     report_type    String,      -- weekly / monthly
     period_start   Date,
     period_end     Date,
-    recipients     String,      -- JSON: [{"type": "management"}, {"type": "sales", "salesperson_id": "xxx"}]
+    recipients     String,      -- JSON: [{"type": "management", "channel_id": "oc_xxx"}]
     file_path      String,
     sent_at        DateTime,
     status         String       -- generated / sent / failed
 ) ENGINE = ReplacingMergeTree(sent_at)
 ```
+
+**`dm.report_recipients`** — 报告接收人配置（飞书 channel ID）
+```sql
+CREATE TABLE dm.report_recipients (
+    id              String,
+    recipient_type  String,     -- management / sales
+    name            String,     -- 如"财务总监群"
+    channel_id      String,     -- 飞书群 ID 或用户 open_id
+    enabled         UInt8,
+    created_at      DateTime
+) ENGINE = ReplacingMergeTree(created_at)
+```
+
+初始化时插入：`recipient_type=management, channel_id=FEISHU_MGMT_CHANNEL_ID 环境变量值`
 
 ---
 
@@ -303,11 +335,11 @@ CREATE TABLE dm.report_records (
 ## 十、实施顺序
 
 ```
-Step 1: DDL + 初始化脚本（alert_rules 预置数据）
-Step 2: AlertService 核心逻辑 + APScheduler 集成
+Step 1: DDL（alert_rules / alert_history / report_records / report_recipients）+ 初始化脚本
+Step 2: AlertService 核心逻辑 + APScheduler 09:00 集成
 Step 3: Alert API CRUD
-Step 4: DashboardService + 看版模板
-Step 5: ReportService + 报告模板
-Step 6: 双通道发送逻辑（管理层 + 业务员）
+Step 4: DashboardService + 看版模板 + APScheduler 02:30 集成
+Step 5: ReportService + 报告模板（管理层通道）
+Step 6: APScheduler 周一/月初 08:00 调度集成
 Step 7: 集成测试 + 冒烟测试
 ```
