@@ -516,15 +516,16 @@ CREATE TABLE dm.dm_customer360 (
     overdue_rate           Float32,
     payment_score          Float32,          -- 付款信用分（0-100）
     last_payment_date      Date,
-    last_ar_date           Date,            -- 最近一笔应收日期
+    last_payment_date      Date,            -- 最近付款日期（已付款应收中最近一笔）
     first_coop_date        Date,            -- 首次合作日期
     risk_level             String,           -- 高/中/低
     merge_status           String,           -- pending/confirmed/auto_merged
     -- 注意：rejected 状态仅存在于 merge_queue，dm_customer360 不存储 rejected 记录
+    company_code           String,           -- 主公司编码（用于按公司维度统计）
     stat_date              Date,
     updated_at             DateTime,
     PRIMARY KEY (unified_customer_code, stat_date)
-) ENGINE = SummingMergeTree()
+) ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY (unified_customer_code, stat_date);
 ```
 
