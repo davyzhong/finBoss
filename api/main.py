@@ -13,7 +13,14 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     settings = get_settings()
     print(f"Starting {settings.app.app_name} v{settings.app.app_version}")
+
+    from services.scheduler_service import start_scheduler, stop_scheduler
+
+    start_scheduler()
+
     yield
+
+    stop_scheduler()
     print("Shutting down FinBoss")
 
 
