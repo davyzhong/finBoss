@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import logging
 
+from clickhouse_driver.errors import Error as ClickHouseError
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -35,9 +37,16 @@ def main():
             ch.execute(stmt)
             # 提取表名用于日志
             table_name = stmt.split("CREATE TABLE IF NOT EXISTS ")[-1].split("(")[0].strip()
-            logger.info(f"  ✅ {table_name}")
+            logger.info(f"  OK {table_name}")
+        except ClickHouseError as e:
+            # Code 57 = TABLE_ALREADY_EXISTS
+            if getattr(e, "code", None) == 57:
+                table_name = stmt.split("CREATE TABLE IF NOT EXISTS ")[-1].split("(")[0].strip()
+                logger.info(f"  SKIP {table_name} (already exists)")
+            else:
+                logger.error(f"  FAIL {e}")
         except Exception as e:
-            logger.error(f"  ❌ 执行失败: {e}")
+            logger.error(f"  FAIL {e}")
 
     logger.info("客户360初始化完成！")
 

@@ -97,6 +97,14 @@ class ClickHouseDataService:
             return None
         return result[0][0] if result else None
 
+    def execute(self, sql: str) -> None:
+        """执行 DDL 等无返回值的语句
+
+        Args:
+            sql: DDL 或其他无返回值要求的 SQL 语句
+        """
+        self.client.execute(sql)
+
     def get_ar_summary(
         self,
         company_code: str | None = None,
