@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import get_settings
-from api.routes import ai, ar, knowledge, query, attribution
+from api.routes import ai, ar, knowledge, query, attribution, feishu
 
 
 @asynccontextmanager
@@ -50,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI智能"])
     app.include_router(attribution.router, prefix="/api/v1/attribution", tags=["归因分析"])
     app.include_router(knowledge.router, prefix="/api/v1/ai/knowledge", tags=["知识库"])
+    app.include_router(feishu.router, prefix="/api/v1/feishu", tags=["飞书机器人"])
 
     @app.get("/health")
     async def health_check():
