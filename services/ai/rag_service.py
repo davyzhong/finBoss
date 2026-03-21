@@ -75,7 +75,9 @@ class RAGService:
                 )
                 if response.status_code == 200:
                     data = response.json()
-                    return data.get("embedding", [])
+                    embedding = data.get("embedding")
+                    if embedding:
+                        return embedding
         except Exception:
             pass
 

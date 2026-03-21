@@ -5,7 +5,7 @@ from typing import Generator
 
 import pytest
 from factory import Factory, Faker
-from factory.random import random_seed
+from factory.random import reseed_random
 
 from api.config import Settings, get_settings
 from schemas.dm.ar import DMCustomerAR, DMARSummary
@@ -15,7 +15,7 @@ from schemas.std.ar import StdARRecord
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_env():
     """设置测试环境"""
-    random_seed(42)
+    reseed_random(42)
 
 
 @pytest.fixture

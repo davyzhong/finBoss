@@ -96,24 +96,14 @@ class NLQueryService:
 
     def _validate_sql(self, sql: str) -> bool:
         """验证 SQL 安全性（仅允许 SELECT）"""
-        dangerous_keywords = [
-            "INSERT",
-            "UPDATE",
-            "DELETE",
-            "DROP",
-            "TRUNCATE",
-            "ALTER",
-            "CREATE",
-            "GRANT",
-            "REVOKE",
-            "EXEC",
-            "EXECUTE",
-            "CALL",
-        ]
-        sql_upper = sql.upper()
-        for keyword in dangerous_keywords:
-            if keyword in sql_upper:
-                return False
+        import re
+
+        dangerous_pattern = re.compile(
+            r"\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|EXEC|EXECUTE|CALL)\b",
+            re.IGNORECASE,
+        )
+        if dangerous_pattern.search(sql):
+            return False
         return True
 
     def query(self, natural_language: str) -> dict[str, Any]:
