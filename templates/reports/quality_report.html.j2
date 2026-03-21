@@ -1,0 +1,110 @@
+{# templates/reports/quality_report.html.j2 #}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据质量看板 - {{ stat_date }}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f7fa; padding: 20px; }
+  .container { max-width: 1100px; margin: 0 auto; background: white; border-radius: 12px; padding: 32px; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  h1 { font-size: 20px; }
+  .kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
+  .kpi { background: #f8fafc; border-radius: 8px; padding: 16px; text-align: center; }
+  .kpi .v { font-size: 22px; font-weight: 700; }
+  .kpi .l { font-size: 12px; color: #888; margin-top: 4px; }
+  .kpi .v.danger { color: #e53e3e; }
+  .kpi .v.warning { color: #d69e2e; }
+  .score-bar { height: 8px; background: #e2e8f0; border-radius: 4px; margin-top: 8px; }
+  .score-fill { height: 100%; border-radius: 4px; background: #48bb78; }
+  .score-fill.danger { background: #e53e3e; }
+  .score-fill.warning { background: #d69e2e; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 16px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+  th { color: #888; font-size: 12px; text-transform: uppercase; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .tag.high { background: #fed7d7; color: #c53030; }
+  .tag.medium { background: #fefcbf; color: #975a16; }
+  .tag.low { background: #c6f6d5; color: #276749; }
+  .footer { margin-top: 24px; color: #aaa; font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>数据质量看板</h1>
+    <span style="color:#888;">{{ stat_date }} | 自动扫描</span>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="v">{{ summary.total_tables }}</div>
+      <div class="l">监控表数</div>
+    </div>
+    <div class="kpi">
+      <div class="v">{{ summary.total_fields }}</div>
+      <div class="l">监控字段</div>
+    </div>
+    <div class="kpi">
+      <div class="v{% if summary.anomaly_count > 0 %} danger{% endif %}">{{ summary.anomaly_count }}</div>
+      <div class="l">异常数</div>
+    </div>
+    <div class="kpi">
+      <div class="v{% if summary.high_severity > 0 %} danger{% elif summary.medium_severity > 0 %} warning{% endif %}">
+        {{ summary.high_severity }} / {{ summary.medium_severity }}
+      </div>
+      <div class="l">高危 / 中危</div>
+    </div>
+    <div class="kpi">
+      <div class="v{% if summary.score_pct < 90 %} danger{% elif summary.score_pct < 95 %} warning{% endif %}">
+        {{ "%.1f"|format(summary.score_pct) }}%
+      </div>
+      <div class="l">健康度</div>
+      <div class="score-bar">
+        <div class="score-fill{% if summary.score_pct < 90 %} danger{% elif summary.score_pct < 95 %} warning{% endif %}"
+             style="width:{{ summary.score_pct }}%"></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 style="font-size:15px;margin-bottom:8px;">异常字段明细</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>表名</th>
+        <th>字段</th>
+        <th>指标</th>
+        <th>当前值</th>
+        <th>阈值</th>
+        <th>级别</th>
+        <th>状态</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for a in anomalies %}
+    <tr>
+      <td>{{ a.table_name }}</td>
+      <td>{{ a.column_name }}</td>
+      <td>{{ a.metric }}</td>
+      <td>{{ "%.4f"|format(a.value) }}</td>
+      <td>{{ "%.4f"|format(a.threshold) }}</td>
+      <td>
+        <span class="tag {% if a.severity == '高' %}high{% elif a.severity == '中' %}medium{% else %}low{% endif %}">
+          {{ a.severity }}
+        </span>
+      </td>
+      <td>{{ a.status }}</td>
+    </tr>
+    {% endfor %}
+    {% if not anomalies %}
+    <tr><td colspan="7" style="color:#888;text-align:center;">✓ 无异常，数据质量良好</td></tr>
+    {% endif %}
+    </tbody>
+  </table>
+
+  <div class="footer">FinBoss 数据质量监控 | {{ generated_at }}</div>
+</div>
+</body>
+</html>
