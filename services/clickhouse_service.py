@@ -499,7 +499,7 @@ class ClickHouseDataService:
         if unified_code:
             self.client.execute(
                 "ALTER TABLE dm.dm_customer360 UPDATE merge_status = 'confirmed', updated_at = now() "
-                "WHERE unified_customer_code = %(code)s AND stat_date = %(d)s AND merge_status = 'pending'",
+                "WHERE unified_customer_code = %(code)s AND stat_date = %(d)s AND merge_status = 'auto_merged'",
                 {"code": unified_code, "d": today},
             )
         return {"id": queue_id, "status": "confirmed", "unified_customer_code": unified_code, "operator": operator}
