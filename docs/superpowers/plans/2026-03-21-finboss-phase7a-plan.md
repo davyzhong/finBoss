@@ -33,7 +33,6 @@
 **Files:**
 - Create: `scripts/phase7a_ddl.sql`
 - Create: `scripts/init_phase7a.py`
-- Modify: `scripts/init_phase5.py` (add Phase 7A to `--phases` CLI if not already all-run)
 
 - [ ] **Step 1: Write DDL**
 
@@ -72,7 +71,7 @@ ORDER BY (stat_date, table_name, column_name, metric)
 SETTINGS allow_experimental_object_type = 1;
 ```
 
-- [ ] **Step 2: Write init script**
+- [ ] **Step 2: Write init script (follows Phase 5 file-reading pattern)**
 
 ```python
 # scripts/init_phase7a.py
@@ -83,12 +82,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.clickhouse_service import ClickHouseDataService
-from scripts.phase7a_ddl import DDL_STATEMENTS  # embed SQL as string constant
+
+DDL_PATH = Path(__file__).parent / "phase7a_ddl.sql"
 
 
 def init_phase7a() -> None:
     ch = ClickHouseDataService()
-    for stmt in DDL_STATEMENTS:
+    sql = DDL_PATH.read_text()
+    for stmt in sql.split(";"):
+        stmt = stmt.strip()
+        if not stmt:
+            continue
         try:
             ch.execute(stmt)
             print(f"OK: {stmt[:60]}")
@@ -183,10 +187,11 @@ class QualityReport(BaseModel):
 ```python
 # api/schemas/quality.py
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
-from schemas.quality import AnomalyStatus, Severity
+from schemas.quality import AnomalyStatus
 
 
 class QualitySummaryResponse(BaseModel):
@@ -256,9 +261,9 @@ class TestFieldQualityService:
         svc = FieldQualityService(ch=mock_ch)
         anomalies = svc.check_column("dm.ar", "due_date", date.today())
         assert len(anomalies) == 1
-        assert anomalies[0].severity == "高"
-        assert anomalies[0].metric == "null_rate"
-        assert anomalies[0].value == 0.35
+        assert anomalies[0]["severity"] == "高"
+        assert anomalies[0]["metric"] == "null_rate"
+        assert anomalies[0]["value"] == 0.35
 
     def test_no_anomaly_when_under_threshold(self):
         mock_ch = MagicMock()
@@ -269,18 +274,49 @@ class TestFieldQualityService:
         anomalies = svc.check_column("dm.ar", "amount", date.today())
         assert anomalies == []
 
-    def test_negative_rate_numeric_only(self):
+    def test_freshness_hours_triggers_medium_anomaly(self):
+        """freshness_hours > 48h triggers a MEDIUM anomaly."""
         mock_ch = MagicMock()
-        mock_ch.execute_query.return_value = [
-            {"column_name": "amount", "null_rate": 0.0, "type": "Decimal(18,2)"},
-            {"column_name": "name", "null_rate": 0.0, "type": "String"},
+        # Side effects: column list, null_rate, distinct_rate, freshness
+        mock_ch.execute_query.side_effect = [
+            [{"column_name": "updated_at", "type": "DateTime"}],  # list_columns
+            [{"null_rate": 0.0}],   # null_rate
+            [{"distinct_rate": 0.1}],  # distinct_rate
+            # freshness: 55 hours old
+            [{"freshness_hours": 55.0}],
         ]
         svc = FieldQualityService(ch=mock_ch)
-        # String field should not be checked for negative_rate
-        result = svc._should_check_negative_rate("String")
-        assert result is False
-        result = svc._should_check_negative_rate("Decimal(18,2)")
-        assert result is True
+        anomalies = svc.check_column("dm.c360", "updated_at", date.today())
+        freshness = [a for a in anomalies if a["metric"] == "freshness_hours"]
+        assert len(freshness) == 1
+        assert freshness[0]["severity"] == "中"
+
+    def test_distinct_rate_high_triggers_medium(self):
+        mock_ch = MagicMock()
+        mock_ch.execute_query.side_effect = [
+            [{"column_name": "id", "type": "String"}],
+            [{"null_rate": 0.0}],
+            [{"distinct_rate": 0.991}],  # > 0.99 → MEDIUM
+        ]
+        svc = FieldQualityService(ch=mock_ch)
+        anomalies = svc.check_column("dm.t", "id", date.today())
+        dr = [a for a in anomalies if a["metric"] == "distinct_rate"]
+        assert len(dr) == 1
+        assert dr[0]["severity"] == "低"
+
+    def test_negative_rate_numeric_only(self):
+        svc = FieldQualityService(ch=MagicMock())
+        assert svc._should_check_negative_rate("String") is False
+        assert svc._should_check_negative_rate("Nullable(String)") is False
+        assert svc._should_check_negative_rate("Decimal(18,2)") is True
+        assert svc._should_check_negative_rate("Int64") is True
+        assert svc._should_check_negative_rate("Float64") is True
+
+    def test_etl_time_absent_skips_filter(self):
+        """When a table has no etl_time column, _build_filter_clause returns '1=1'."""
+        svc = FieldQualityService(ch=MagicMock())
+        clause = svc._build_filter_clause("dm.notimetable")
+        assert clause == "1=1"
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -309,21 +345,25 @@ class FieldQualityService:
     """字段级数据质量检查"""
 
     THRESHOLDS = {
-        "null_rate":        {"high": 0.20, "medium": 0.10},
-        "distinct_rate":    {"high": 0.999, "medium": 0.99},
-        "negative_rate":    {"high": 0.05, "medium": 0.02},
-        "freshness_hours":  {"high": 72, "medium": 48},
+        "null_rate":       {"high": 0.20, "medium": 0.10},
+        "distinct_rate":   {"high": 0.999, "medium": 0.99},
+        "negative_rate":   {"high": 0.05, "medium": 0.02},
+        "freshness_hours": {"high": 72, "medium": 48},
     }
 
-    def __init__(
-        self,
-        ch: ClickHouseDataService | None = None,
-    ):
+    # Ratio metrics formatted as %; freshness_hours is raw number
+    RATIO_METRICS = {"null_rate", "distinct_rate", "negative_rate"}
+
+    def __init__(self, ch: ClickHouseDataService | None = None):
         self._ch = ch or ClickHouseDataService()
         self._jinja = Environment(
             loader=FileSystemLoader(PROJECT_ROOT / "templates" / "reports"),
             autoescape=True,
         )
+
+    # ------------------------------------------------------------------
+    # Table / column discovery
+    # ------------------------------------------------------------------
 
     def list_monitored_tables(self) -> list[str]:
         rows = self._ch.execute_query(
@@ -344,29 +384,43 @@ class FieldQualityService:
         )
         return rows
 
+    def _has_etl_time(self, table_name: str) -> bool:
+        cols = self.list_columns(table_name)
+        return any(c["column_name"] == "etl_time" for c in cols)
+
+    def _build_filter_clause(self, table_name: str, stat_date_iso: str) -> str:
+        """Return 'toDate(etl_time) = ...' if etl_time exists, else '1=1'."""
+        if self._has_etl_time(table_name):
+            return f"toDate(etl_time) = '{stat_date_iso}'"
+        return "1=1"
+
+    # ------------------------------------------------------------------
+    # Per-column checks
+    # ------------------------------------------------------------------
+
     def check_column(
         self,
         table_name: str,
         column_name: str,
         stat_date: date,
     ) -> list[dict[str, Any]]:
-        """检查单个字段，返回异常列表（空列表=正常）"""
+        """检查单个字段，返回异常列表（空列表=正常）。"""
         cols = self.list_columns(table_name)
-        col_info = next((c for c in cols if c["column_name"] == column_name), None)
-        if not col_info:
+        if column_name not in {c["column_name"] for c in cols}:
             return []
-        col_type = col_info["type"]
-
-        anomalies = []
+        col_type = next(c["type"] for c in cols if c["column_name"] == column_name)
         today_str = stat_date.isoformat()
-        escaped_col = column_name  # column names are safe identifiers
+        filter_clause = self._build_filter_clause(table_name, today_str)
+        # backtick-quote column name (safe identifier)
+        qcol = f"`{column_name}`"
+        anomalies: list[dict[str, Any]] = []
 
         # null_rate — all types
-        null_rows = self._ch.execute_query(
-            f"SELECT countIf(`{escaped_col}` IS NULL) / count() AS null_rate "
-            f"FROM {table_name} WHERE toDate(etl_time) = '{today_str}'"
+        rows = self._ch.execute_query(
+            f"SELECT countIf({qcol} IS NULL) / count() AS v "
+            f"FROM {table_name} WHERE {filter_clause}"
         )
-        null_rate = float(null_rows[0]["null_rate"]) if null_rows else 0.0
+        null_rate = float(rows[0]["v"]) if rows else 0.0
         t = self.THRESHOLDS["null_rate"]
         if null_rate > t["high"]:
             anomalies.append(self._make_anomaly(table_name, column_name, "null_rate", null_rate, t["high"], "高"))
@@ -374,11 +428,11 @@ class FieldQualityService:
             anomalies.append(self._make_anomaly(table_name, column_name, "null_rate", null_rate, t["medium"], "中"))
 
         # distinct_rate — all types
-        distinct_rows = self._ch.execute_query(
-            f"SELECT uniqExact(`{escaped_col}`) / count() AS distinct_rate "
-            f"FROM {table_name} WHERE toDate(etl_time) = '{today_str}'"
+        rows = self._ch.execute_query(
+            f"SELECT uniqExact({qcol}) / count() AS v "
+            f"FROM {table_name} WHERE {filter_clause}"
         )
-        distinct_rate = float(distinct_rows[0]["distinct_rate"]) if distinct_rows else 0.0
+        distinct_rate = float(rows[0]["v"]) if rows else 0.0
         t = self.THRESHOLDS["distinct_rate"]
         if distinct_rate > t["high"]:
             anomalies.append(self._make_anomaly(table_name, column_name, "distinct_rate", distinct_rate, t["high"], "中"))
@@ -387,86 +441,37 @@ class FieldQualityService:
 
         # negative_rate — numeric types only
         if self._should_check_negative_rate(col_type):
-            neg_rows = self._ch.execute_query(
-                f"SELECT countIf(`{escaped_col}` < 0) / count() AS negative_rate "
-                f"FROM {table_name} WHERE toDate(etl_time) = '{today_str}'"
+            rows = self._ch.execute_query(
+                f"SELECT countIf({qcol} < 0) / count() AS v "
+                f"FROM {table_name} WHERE {filter_clause}"
             )
-            negative_rate = float(neg_rows[0]["negative_rate"]) if neg_rows else 0.0
+            neg = float(rows[0]["v"]) if rows else 0.0
             t = self.THRESHOLDS["negative_rate"]
-            if negative_rate > t["high"]:
-                anomalies.append(self._make_anomaly(table_name, column_name, "negative_rate", negative_rate, t["high"], "高"))
-            elif negative_rate > t["medium"]:
-                anomalies.append(self._make_anomaly(table_name, column_name, "negative_rate", negative_rate, t["medium"], "中"))
+            if neg > t["high"]:
+                anomalies.append(self._make_anomaly(table_name, column_name, "negative_rate", neg, t["high"], "高"))
+            elif neg > t["medium"]:
+                anomalies.append(self._make_anomaly(table_name, column_name, "negative_rate", neg, t["medium"], "中"))
+
+        # freshness_hours — all types, only if table has etl_time
+        if self._has_etl_time(table_name):
+            rows = self._ch.execute_query(
+                f"SELECT now() - MAX(etl_time) AS v FROM {table_name}"
+            )
+            hours = float(rows[0]["v"]) if rows else 0.0
+            t = self.THRESHOLDS["freshness_hours"]
+            if hours > t["high"]:
+                anomalies.append(self._make_anomaly(table_name, column_name, "freshness_hours", hours, t["high"], "中"))
+            elif hours > t["medium"]:
+                anomalies.append(self._make_anomaly(table_name, column_name, "freshness_hours", hours, t["medium"], "低"))
 
         return anomalies
 
-    def check_all(self, stat_date: date | None = None) -> dict[str, Any]:
-        """对所有表执行字段级质量检查"""
-        stat_date = stat_date or date.today()
-        today_str = stat_date.isoformat()
-        report_id = str(uuid.uuid4())
-        now_str = datetime.now().isoformat()
-
-        tables = self.list_monitored_tables()
-        total_fields = 0
-        all_anomalies = []
-        table_scores = []
-
-        for table_name in tables:
-            cols = self.list_columns(table_name)
-            normal_count = 0
-            table_anomalies = []
-            for col in cols:
-                col_anomalies = self.check_column(table_name, col["column_name"], stat_date)
-                total_fields += 1
-                if col_anomalies:
-                    table_anomalies.extend(col_anomalies)
-                else:
-                    normal_count += 1
-            all_anomalies.extend(table_anomalies)
-            score_pct = (normal_count / len(cols) * 100) if cols else 100.0
-            table_scores.append(score_pct)
-
-            # save report row
-            self._ch.execute(
-                f"INSERT INTO dm.quality_reports "
-                f"(id, stat_date, table_name, total_fields, anomaly_count, score_pct, generated_at) "
-                f"VALUES ('{report_id}', '{today_str}', '{table_name}', {len(cols)}, "
-                f"{len(table_anomalies)}, {score_pct:.2f}, '{now_str}')"
-            )
-
-        # save anomalies
-        for a in all_anomalies:
-            resolved_at = "toDateTime('1970-01-01 00:00:00')"
-            self._ch.execute(
-                f"INSERT INTO dm.quality_anomalies "
-                f"(id, report_id, stat_date, table_name, column_name, metric, value, threshold, severity, status, detected_at, resolved_at) "
-                f"VALUES ('{a['id']}', '{report_id}', '{today_str}', '{a['table_name']}', '{a['column_name']}', "
-                f"'{a['metric']}', {a['value']:.6f}, {a['threshold']:.6f}, '{a['severity']}', 'open', '{now_str}', {resolved_at})"
-            )
-
-        overall_score = sum(table_scores) / len(table_scores) if table_scores else 100.0
-        return {
-            "report_id": report_id,
-            "stat_date": today_str,
-            "total_tables": len(tables),
-            "total_fields": total_fields,
-            "anomaly_count": len(all_anomalies),
-            "score_pct": round(overall_score, 2),
-        }
-
     def _should_check_negative_rate(self, col_type: str) -> bool:
-        numeric_prefixes = ("Int", "UInt", "Float", "Decimal")
-        return any(col_type.startswith(p) for p in numeric_prefixes)
+        return any(col_type.startswith(p) for p in ("Int", "UInt", "Float", "Decimal"))
 
     def _make_anomaly(
-        self,
-        table_name: str,
-        column_name: str,
-        metric: str,
-        value: float,
-        threshold: float,
-        severity: str,
+        self, table_name: str, column_name: str,
+        metric: str, value: float, threshold: float, severity: str,
     ) -> dict[str, Any]:
         return {
             "id": str(uuid.uuid4()),
@@ -477,6 +482,75 @@ class FieldQualityService:
             "threshold": threshold,
             "severity": severity,
         }
+
+    # ------------------------------------------------------------------
+    # Full scan
+    # ------------------------------------------------------------------
+
+    def check_all(self, stat_date: date | None = None) -> dict[str, Any]:
+        """对所有表执行字段级质量检查（单表失败不中断其余表）。"""
+        stat_date = stat_date or date.today()
+        today_str = stat_date.isoformat()
+        now_str = datetime.now().isoformat()
+        report_id = str(uuid.uuid4())
+
+        tables = self.list_monitored_tables()
+        total_fields = 0
+        all_anomalies: list[dict] = []
+        table_scores: list[float] = []
+
+        for table_name in tables:
+            try:
+                cols = self.list_columns(table_name)
+                normal_count = 0
+                table_anomalies: list[dict] = []
+                for col in cols:
+                    ca = self.check_column(table_name, col["column_name"], stat_date)
+                    total_fields += 1
+                    if ca:
+                        table_anomalies.extend(ca)
+                    else:
+                        normal_count += 1
+                all_anomalies.extend(table_anomalies)
+                score_pct = (normal_count / len(cols) * 100) if cols else 100.0
+                table_scores.append(score_pct)
+
+                self._ch.execute(
+                    f"INSERT INTO dm.quality_reports "
+                    f"(id, stat_date, table_name, total_fields, anomaly_count, score_pct, generated_at) "
+                    f"VALUES ('{report_id}', '{today_str}', '{table_name}', {len(cols)}, "
+                    f"{len(table_anomalies)}, {score_pct:.2f}, '{now_str}')"
+                )
+            except Exception as e:
+                # Per spec: skip table on error, continue scanning
+                logging.getLogger(__name__).warning(
+                    f"[FieldQuality] Skipping {table_name}: {e}"
+                )
+                continue
+
+        for a in all_anomalies:
+            resolved_at = "toDateTime('1970-01-01 00:00:00')"
+            self._ch.execute(
+                f"INSERT INTO dm.quality_anomalies "
+                f"(id, report_id, stat_date, table_name, column_name, metric, value, threshold, severity, status, detected_at, resolved_at) "
+                f"VALUES ('{a['id']}', '{report_id}', '{today_str}', '{a['table_name']}', '{a['column_name']}', "
+                f"'{a['metric']}', {a['value']:.6f}, {a['threshold']:.6f}, '{a['severity']}', 'open', '{now_str}', {resolved_at})"
+            )
+
+        overall_score = sum(table_scores) / len(table_scores) if table_scores else 100.0
+        self.generate_report_html(stat_date)  # write HTML after persisting results
+        return {
+            "report_id": report_id,
+            "stat_date": today_str,
+            "total_tables": len(tables),
+            "total_fields": total_fields,
+            "anomaly_count": len(all_anomalies),
+            "score_pct": round(overall_score, 2),
+        }
+
+    # ------------------------------------------------------------------
+    # Query helpers (used by API routes)
+    # ------------------------------------------------------------------
 
     def get_summary(self, stat_date: date | None = None) -> dict[str, Any]:
         stat_date = stat_date or date.today()
@@ -509,21 +583,72 @@ class FieldQualityService:
             "last_check_at": r.get("last_check_at"),
         }
 
+    def list_reports(self, stat_date: date, limit: int = 50) -> list[dict]:
+        return self._ch.execute_query(
+            f"SELECT * FROM dm.quality_reports "
+            f"WHERE stat_date = '{stat_date.isoformat()}' "
+            f"ORDER BY generated_at DESC LIMIT {limit}"
+        )
+
+    def get_report(self, report_id: str) -> dict | None:
+        rows = self._ch.execute_query(
+            f"SELECT * FROM dm.quality_reports WHERE id = '{report_id}' LIMIT 1"
+        )
+        return rows[0] if rows else None
+
+    def list_anomalies_by_report(self, report_id: str) -> list[dict]:
+        return self._ch.execute_query(
+            f"SELECT * FROM dm.quality_anomalies "
+            f"WHERE report_id = '{report_id}' "
+            f"ORDER BY severity DESC, detected_at DESC"
+        )
+
     def list_open_anomalies(self, limit: int = 100) -> list[dict]:
         return self._ch.execute_query(
             f"SELECT * FROM dm.quality_anomalies "
             f"WHERE status = 'open' "
-            f"ORDER BY severity DESC, detected_at DESC "
-            f"LIMIT {limit}"
+            f"ORDER BY severity DESC, detected_at DESC LIMIT {limit}"
         )
 
     def update_anomaly(self, anomaly_id: str, status: str) -> None:
         now_str = datetime.now().isoformat()
         resolved_at = f"'{now_str}'" if status in ("resolved", "ignored") else "toDateTime('1970-01-01 00:00:00')"
         self._ch.execute(
-            f"ALTER TABLE dm.quality_anomalies UPDATE status = '{status}', resolved_at = {resolved_at} "
+            f"ALTER TABLE dm.quality_anomalies "
+            f"UPDATE status = '{status}', resolved_at = {resolved_at} "
             f"WHERE id = '{anomaly_id}'"
         )
+
+    # ------------------------------------------------------------------
+    # HTML report
+    # ------------------------------------------------------------------
+
+    def generate_report_html(self, stat_date: date | None = None) -> str:
+        stat_date = stat_date or date.today()
+        summary = self.get_summary(stat_date)
+        anomalies = self._ch.execute_query(
+            f"SELECT * FROM dm.quality_anomalies "
+            f"WHERE stat_date = '{stat_date.isoformat()}' "
+            f"ORDER BY severity DESC, detected_at DESC LIMIT 200"
+        )
+        template = self._jinja.get_template("quality_report.html.j2")
+        html = template.render(
+            stat_date=stat_date.isoformat(),
+            summary=summary,
+            anomalies=[dict(a) for a in anomalies],
+            generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        )
+        output_dir = PROJECT_ROOT / "static" / "reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        dated = output_dir / f"quality_report_{stat_date.isoformat()}.html"
+        dated.write_text(html, encoding="utf-8")
+        latest = output_dir / "quality_report_latest.html"
+        latest.write_text(html, encoding="utf-8")  # always overwrite latest
+        return str(dated)
+
+    # ------------------------------------------------------------------
+    # Feishu card
+    # ------------------------------------------------------------------
 
     def send_feishu_card(self, stat_date: date | None = None) -> None:
         from services.feishu.feishu_client import FeishuClient
@@ -532,18 +657,21 @@ class FieldQualityService:
         summary = self.get_summary(stat_date)
         if summary["anomaly_count"] == 0:
             return
-
         settings = get_settings()
         channel_id = settings.feishu.mgmt_channel_id
         if not channel_id:
             return
 
         client = FeishuClient()
-        date_str = stat_date.isoformat() if stat_date else date.today().isoformat()
+        date_str = (stat_date or date.today()).isoformat()
         anomalies = self.list_open_anomalies(limit=10)
-
         high = [a for a in anomalies if a["severity"] == "高"]
         medium = [a for a in anomalies if a["severity"] == "中"]
+
+        def fmt_val(metric: str, value: float) -> str:
+            if metric in self.RATIO_METRICS:
+                return f"{value:.1%}"
+            return f"{value:.1f}h"
 
         card = {
             "header": {
@@ -565,13 +693,13 @@ class FieldQualityService:
 
         if high:
             lines = "\n".join(
-                f"- `{a['table_name']}.{a['column_name']}` — {a['metric']} {a['value']:.1%}（阈值 {a['threshold']:.1%}）"
+                f"- `{a['table_name']}.{a['column_name']}` — {a['metric']} {fmt_val(a['metric'], a['value'])}（阈值 {fmt_val(a['metric'], a['threshold'])})"
                 for a in high
             )
             card["elements"].append({"tag": "markdown", "content": f"**高危（{len(high)}）**\n{lines}"})
         if medium:
             lines = "\n".join(
-                f"- `{a['table_name']}.{a['column_name']}` — {a['metric']} {a['value']:.1%}（阈值 {a['threshold']:.1%}）"
+                f"- `{a['table_name']}.{a['column_name']}` — {a['metric']} {fmt_val(a['metric'], a['value'])}（阈值 {fmt_val(a['metric'], a['threshold'])})"
                 for a in medium
             )
             card["elements"].append({"tag": "markdown", "content": f"**中危（{len(medium)}）**\n{lines}"})
@@ -723,34 +851,7 @@ git commit -m "feat: Phase 7A FieldQualityService with column-level metric check
 </html>
 ```
 
-- [ ] **Step 2: Write `generate_report_html` method in FieldQualityService**
-
-Add to `FieldQualityService` in `services/field_quality_service.py`:
-
-```python
-def generate_report_html(self, stat_date: date | None = None) -> str:
-    stat_date = stat_date or date.today()
-    summary = self.get_summary(stat_date)
-    anomalies = self._ch.execute_query(
-        f"SELECT * FROM dm.quality_anomalies "
-        f"WHERE stat_date = '{stat_date.isoformat()}' "
-        f"ORDER BY severity DESC, detected_at DESC LIMIT 200"
-    )
-    template = self._jinja.get_template("quality_report.html.j2")
-    html = template.render(
-        stat_date=stat_date.isoformat(),
-        summary=summary,
-        anomalies=[dict(a) for a in anomalies],
-        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
-    )
-    output_dir = PROJECT_ROOT / "static" / "reports"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"quality_report_{stat_date.isoformat()}.html"
-    (output_dir / filename).write_text(html, encoding="utf-8")
-    return str(output_dir / filename)
-```
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
 git add templates/reports/quality_report.html.j2
@@ -778,7 +879,6 @@ from fastapi import APIRouter, HTTPException, Query
 
 from api.dependencies import FieldQualityServiceDep
 from api.schemas.quality import AnomalyUpdateRequest, CheckResponse, QualitySummaryResponse
-from services.field_quality_service import FieldQualityService
 
 router = APIRouter(tags=["quality"])
 
@@ -796,29 +896,19 @@ async def list_reports(
     limit: int = Query(default=50, le=500),
 ):
     """质量报告列表"""
-    date_str = stat_date.isoformat() if stat_date else date.today().isoformat()
-    rows = service._ch.execute_query(
-        f"SELECT * FROM dm.quality_reports "
-        f"WHERE stat_date = '{date_str}' "
-        f"ORDER BY generated_at DESC LIMIT {limit}"
-    )
+    stat_date = stat_date or date.today()
+    rows = service.list_reports(stat_date, limit)
     return {"items": rows, "total": len(rows)}
 
 
 @router.get("/reports/{report_id}")
 async def get_report(report_id: str, service: FieldQualityServiceDep):
     """报告详情（含异常明细）"""
-    report_rows = service._ch.execute_query(
-        f"SELECT * FROM dm.quality_reports WHERE id = '{report_id}' LIMIT 1"
-    )
-    if not report_rows:
+    report = service.get_report(report_id)
+    if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    anomaly_rows = service._ch.execute_query(
-        f"SELECT * FROM dm.quality_anomalies "
-        f"WHERE report_id = '{report_id}' "
-        f"ORDER BY severity DESC, detected_at DESC"
-    )
-    return {"report": report_rows[0], "anomalies": anomaly_rows}
+    anomalies = service.list_anomalies_by_report(report_id)
+    return {"report": report, "anomalies": anomalies}
 
 
 @router.get("/anomalies")
@@ -827,13 +917,15 @@ async def list_anomalies(
     status: Literal["open", "resolved", "ignored"] | None = Query(default=None),
     limit: int = Query(default=100, le=1000),
 ):
-    """当前异常列表"""
-    where = f"status = '{status}'" if status else "status = 'open'"
-    rows = service._ch.execute_query(
-        f"SELECT * FROM dm.quality_anomalies "
-        f"WHERE {where} "
-        f"ORDER BY severity DESC, detected_at DESC LIMIT {limit}"
-    )
+    """当前异常列表（默认返回 open 异常）"""
+    if status:
+        rows = service._ch.execute_query(
+            f"SELECT * FROM dm.quality_anomalies "
+            f"WHERE status = '{status}' "
+            f"ORDER BY severity DESC, detected_at DESC LIMIT {limit}"
+        )
+    else:
+        rows = service.list_open_anomalies(limit=limit)
     return {"items": rows, "total": len(rows)}
 
 
@@ -885,7 +977,7 @@ In `api/main.py`, add:
 ```python
 from api.routes import quality
 
-app.include_router(quality.router, prefix="/api/v1/quality", dependencies=[Depends(get_field_quality_service)])
+app.include_router(quality.router, prefix="/api/v1/quality")
 ```
 
 - [ ] **Step 4: Commit**
@@ -916,9 +1008,8 @@ def _register_phase7a_jobs(scheduler: AsyncIOScheduler) -> None:
         try:
             from services.field_quality_service import FieldQualityService
             svc = FieldQualityService()
-            result = svc.check_all()
+            result = svc.check_all()  # check_all calls generate_report_html internally
             svc.send_feishu_card()
-            svc.generate_report_html()
             logger4.info(f"[Phase7A] Quality check done: {result['total_tables']} tables, {result['anomaly_count']} anomalies")
         except Exception as e:
             logger4.error(f"[Phase7A] Quality check failed: {e}", exc_info=True)
@@ -980,20 +1071,16 @@ class TestQualityAPI:
             assert data["anomaly_count"] == 2
 
     def test_trigger_check(self, client):
-        with patch("services.field_quality_service.ClickHouseDataService") as mock_ch_cls:
+        with patch("services.field_quality_service.ClickHouseDataService") as mock_ch_cls, \
+             patch("services.field_quality_service.FieldQualityService.generate_report_html") as mock_html:
             mock_ch = MagicMock()
             mock_ch_cls.return_value = mock_ch
             mock_ch.execute_query.side_effect = [
-                # list tables
-                [{"database": "dm", "name": "ar"}],
-                # columns
-                [{"column_name": "amount", "type": "Decimal(18,2)"}],
-                # null_rate query
-                [{"null_rate": 0.01}],
-                # distinct_rate query
-                [{"distinct_rate": 0.5}],
-                # negative_rate query
-                [{"negative_rate": 0.0}],
+                [{"database": "dm", "name": "ar"}],        # list tables
+                [{"column_name": "amount", "type": "Decimal(18,2)"}],  # columns
+                [{"v": 0.01}],   # null_rate
+                [{"v": 0.5}],    # distinct_rate
+                [{"v": 0.0}],    # negative_rate
             ]
             mock_ch.execute.return_value = None
             resp = client.post("/api/v1/quality/check")
@@ -1002,7 +1089,7 @@ class TestQualityAPI:
             assert data["status"] == "ok"
             assert "duration_ms" in data
 
-    def test_list_anomalies(self, client):
+    def test_list_anomalies_default_open(self, client):
         with patch("services.field_quality_service.ClickHouseDataService") as mock_ch_cls:
             mock_ch = MagicMock()
             mock_ch_cls.return_value = mock_ch
@@ -1025,6 +1112,16 @@ class TestQualityAPI:
             assert data["total"] == 1
             assert data["items"][0]["severity"] == "高"
 
+    def test_list_anomalies_filtered_by_status(self, client):
+        with patch("services.field_quality_service.ClickHouseDataService") as mock_ch_cls:
+            mock_ch = MagicMock()
+            mock_ch_cls.return_value = mock_ch
+            mock_ch.execute_query.return_value = []
+            resp = client.get("/api/v1/quality/anomalies?status=resolved")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total"] == 0
+
     def test_update_anomaly_resolved(self, client):
         with patch("services.field_quality_service.ClickHouseDataService") as mock_ch_cls:
             mock_ch = MagicMock()
@@ -1036,6 +1133,32 @@ class TestQualityAPI:
             )
             assert resp.status_code == 200
             assert resp.json()["new_status"] == "resolved"
+
+    def test_get_report_not_found(self, client):
+        with patch("services.field_quality_service.ClickHouseDataService") as mock_ch_cls:
+            mock_ch = MagicMock()
+            mock_ch_cls.return_value = mock_ch
+            mock_ch.execute_query.return_value = []
+            resp = client.get("/api/v1/quality/reports/nonexistent-id")
+            assert resp.status_code == 404
+
+    def test_check_all_isolates_bad_table(self, client):
+        """Single table throwing an error should not abort the full scan."""
+        with patch("services.field_quality_service.ClickHouseDataService") as mock_ch_cls, \
+             patch("services.field_quality_service.FieldQualityService.generate_report_html"):
+            mock_ch = MagicMock()
+            mock_ch_cls.return_value = mock_ch
+            # list tables returns two tables; second raises an error
+            mock_ch.execute_query.side_effect = [
+                [{"database": "dm", "name": "good_table"}],   # list tables
+                [{"column_name": "id", "type": "String"}],    # columns
+                [{"v": 0.0}],  # null_rate
+                [{"v": 0.1}],  # distinct_rate
+            ]
+            mock_ch.execute.side_effect = [None, None]  # INSERT reports, INSERT anomalies
+            resp = client.post("/api/v1/quality/check")
+            assert resp.status_code == 200
+            assert resp.json()["report_count"] >= 1  # good_table processed
 ```
 
 - [ ] **Step 2: Run integration tests**
