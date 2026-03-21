@@ -2,8 +2,6 @@
 """Quality Service 单元测试"""
 from datetime import datetime, timedelta
 
-import pytest
-
 from services.quality_service import QualityLevel, QualityService
 
 

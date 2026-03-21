@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -112,6 +112,20 @@ class AppConfig(BaseSettings):
     api_port: int = Field(default=8000, description="API 端口")
     log_level: str = Field(default="INFO", description="日志级别")
     debug: bool = Field(default=False, description="调试模式")
+    cors_origins: list[str] = Field(
+        default=["http://localhost:8000", "http://127.0.0.1:8000"],
+        description="CORS 允许的源列表，APP_CORS_ORIGINS 环境变量可覆盖（逗号分隔）",
+    )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v):
+        """支持字符串（逗号分隔）或列表格式"""
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        if isinstance(v, list):
+            return v
+        return ["http://localhost:8000", "http://127.0.0.1:8000"]
 
 
 class OllamaConfig(BaseSettings):

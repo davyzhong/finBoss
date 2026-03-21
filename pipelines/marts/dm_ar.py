@@ -2,9 +2,9 @@
 """数据集市层 AR 生成"""
 import logging
 from datetime import datetime
-from typing import Any
 
-from schemas.dm.ar import DMCustomerAR, DMARSummary
+from pipelines.marts.ar_aggregations import aggregate_aging_buckets, calc_overdue_rate, filter_overdue
+from schemas.dm.ar import DMARSummary, DMCustomerAR
 from schemas.std.ar import StdARRecord
 
 logger = logging.getLogger(__name__)
@@ -35,11 +35,8 @@ class ARMartGenerator:
         first = records[0]
         stat_date = stat_date or datetime.now()
 
-        aging_buckets = {"0-30": 0.0, "31-60": 0.0, "61-90": 0.0, "91-180": 0.0, "180+": 0.0}
-        for r in records:
-            aging_buckets[r.aging_bucket] = aging_buckets.get(r.aging_bucket, 0.0) + r.unallocated_amount
-
-        overdue = [r for r in records if r.is_overdue]
+        aging_buckets = aggregate_aging_buckets(records)
+        overdue = filter_overdue(records)
         total_count = len(records)
         overdue_count = len(overdue)
 
@@ -54,7 +51,7 @@ class ARMartGenerator:
             overdue_amount=sum(r.unallocated_amount for r in overdue),
             overdue_count=overdue_count,
             total_count=total_count,
-            overdue_rate=round(overdue_count / total_count if total_count > 0 else 0.0, 4),
+            overdue_rate=calc_overdue_rate(overdue_count, total_count),
             aging_0_30=aging_buckets["0-30"],
             aging_31_60=aging_buckets["31-60"],
             aging_61_90=aging_buckets["61-90"],
@@ -80,7 +77,7 @@ class ARMartGenerator:
 
         first = records[0]
         stat_date = stat_date or datetime.now()
-        overdue = [r for r in records if r.is_overdue]
+        overdue = filter_overdue(records)
         total_count = len(records)
         overdue_count = len(overdue)
         last_bill_date = max((r.bill_date for r in records), default=None)
@@ -94,7 +91,7 @@ class ARMartGenerator:
             overdue_amount=sum(r.unallocated_amount for r in overdue),
             overdue_count=overdue_count,
             total_count=total_count,
-            overdue_rate=round(overdue_count / total_count if total_count > 0 else 0.0, 4),
+            overdue_rate=calc_overdue_rate(overdue_count, total_count),
             last_bill_date=last_bill_date,
             etl_time=datetime.now(),
         )

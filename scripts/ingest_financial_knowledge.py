@@ -6,7 +6,6 @@
 2. 指标口径定义（AR/逾期率/账龄等）
 3. 业务规则（账龄分类、超账期定义）
 """
-import json
 import sys
 from pathlib import Path
 
@@ -14,7 +13,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.ai import RAGService
-
 
 # ===========================================
 # 初始财务知识库内容
@@ -128,7 +126,7 @@ def main() -> None:
         print("   运行: docker-compose -f config/docker-compose.yml up -d")
         sys.exit(1)
 
-    print(f"✅ Milvus 连接正常")
+    print("✅ Milvus 连接正常")
     print(f"📦 开始导入 {len(FINANCIAL_KNOWLEDGE)} 条财务知识...")
 
     # 统计各类别数量

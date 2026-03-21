@@ -1,6 +1,7 @@
 """数据源连接器基类"""
 from abc import ABC, abstractmethod
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 
 class BaseConnector(ABC):

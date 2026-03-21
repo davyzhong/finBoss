@@ -1,8 +1,8 @@
 """测试归因分析服务"""
-import pytest
-from unittest.mock import MagicMock, patch
-from services.ai.attribution_service import AttributionService, calc_confidence
+from unittest.mock import patch
+
 from schemas.attribution import AttributionResult
+from services.ai.attribution_service import AttributionService, calc_confidence
 
 
 class TestCalcConfidence:

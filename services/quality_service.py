@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class QualityLevel(Enum):
@@ -22,7 +22,7 @@ class QualityResult:
     level: QualityLevel
     passed: bool
     message: str
-    details: Optional[dict[str, Any]] = None
+    details: dict[str, Any] | None = None
     checked_at: datetime = None
 
     def __post_init__(self):
@@ -117,7 +117,7 @@ class QualityService:
     def check_timeliness(
         self,
         table_name: str,
-        latest_update: Optional[datetime],
+        latest_update: datetime | None,
         max_delay_minutes: int = 10,
     ) -> QualityResult:
         """检查数据及时性
@@ -164,7 +164,7 @@ class QualityService:
         invalid_count: int,
         total_count: int,
         field_name: str,
-        valid_range: Optional[tuple[Any, Any]] = None,
+        valid_range: tuple[Any, Any] | None = None,
     ) -> QualityResult:
         """检查数据有效性
 

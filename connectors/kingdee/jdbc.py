@@ -1,10 +1,10 @@
 # connectors/kingdee/jdbc.py
 """金蝶 MSSQL 数据库连接"""
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
 
 from connectors.common.base import BaseConnector
 

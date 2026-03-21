@@ -25,6 +25,8 @@ def mock_nl_query_service():
 
 @pytest.fixture
 def client():
+    from api.main import create_app
+
     return TestClient(create_app())
 
 
@@ -68,9 +70,9 @@ class TestAIDirectRoutes:
             "error": None,
         }
 
-        from api.routes.ai import nl_query
-
         import asyncio
+
+        from api.routes.ai import nl_query
 
         async def run():
             result = await nl_query("本月应收总额是多少", mock_nl_query_service)
@@ -89,11 +91,11 @@ class TestAIDirectRoutes:
             "explanation": None,
         }
 
+        import asyncio
+
         from fastapi import HTTPException
 
         from api.routes.ai import nl_query
-
-        import asyncio
 
         async def run():
             with pytest.raises(HTTPException) as exc_info:
@@ -110,9 +112,9 @@ class TestAIDirectRoutes:
         mock_rag.ingest.return_value = "kb_test001"
 
         with patch("services.ai.RAGService", return_value=mock_rag):
-            from api.routes.ai import rag_ingest
-
             import asyncio
+
+            from api.routes.ai import rag_ingest
 
             async def run():
                 result = await rag_ingest(
@@ -133,9 +135,9 @@ class TestAIDirectRoutes:
         ]
 
         with patch("services.ai.RAGService", return_value=mock_rag):
-            from api.routes.ai import rag_search
-
             import asyncio
+
+            from api.routes.ai import rag_search
 
             async def run():
                 result = await rag_search(
@@ -154,9 +156,9 @@ class TestAIDirectRoutes:
         mock_rag.search.return_value = []
 
         with patch("services.ai.RAGService", return_value=mock_rag):
-            from api.routes.ai import rag_search
-
             import asyncio
+
+            from api.routes.ai import rag_search
 
             async def run():
                 await rag_search(query="test")
@@ -170,9 +172,9 @@ class TestAIDirectRoutes:
         mock_rag.ingest_batch.return_value = ["kb_001", "kb_002"]
 
         with patch("services.ai.RAGService", return_value=mock_rag):
-            from api.routes.ai import rag_ingest_batch
-
             import asyncio
+
+            from api.routes.ai import rag_ingest_batch
 
             async def run():
                 documents = [

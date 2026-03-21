@@ -2,12 +2,8 @@
 """Schema 验证测试"""
 from datetime import datetime
 
-import pytest
-from pydantic import ValidationError
-
-from schemas.dm.ar import DMARSummary, DMCustomerAR
+from schemas.dm.ar import DMARSummary
 from schemas.std.ar import StdARRecord
-from schemas.raw.kingdee import RawARVerify
 
 
 class TestStdARRecord:

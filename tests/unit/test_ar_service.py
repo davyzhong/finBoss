@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 import pytest
 
 from services.ar_service import ARService
-from schemas.std.ar import StdARRecord
 
 
 class TestARServiceAging:

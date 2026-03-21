@@ -1,7 +1,7 @@
 # schemas/raw/kingdee.py
 """原始层 Schema - 与金蝶数据库表一一映射"""
 from datetime import datetime
-from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -22,12 +22,12 @@ class RawARVerify(BaseModel):
     unallocate_amount: float = Field(description="未核销金额")
     status: str = Field(description="状态")
     company_id: int = Field(description="公司ID")
-    dept_id: Optional[int] = Field(default=None, description="部门ID")
-    employee_id: Optional[int] = Field(default=None, description="业务员ID")
+    dept_id: int | None = Field(default=None, description="部门ID")
+    employee_id: int | None = Field(default=None, description="业务员ID")
     document_status: str = Field(description="审批状态")
-    creator_id: Optional[int] = Field(default=None, description="创建人ID")
+    creator_id: int | None = Field(default=None, description="创建人ID")
     create_time: datetime = Field(description="创建时间")
-    update_time: Optional[datetime] = Field(default=None, description="更新时间")
+    update_time: datetime | None = Field(default=None, description="更新时间")
     etl_time: datetime = Field(description="ETL处理时间")
 
     class Config:

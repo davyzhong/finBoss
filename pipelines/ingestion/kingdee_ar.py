@@ -1,8 +1,9 @@
 # pipelines/ingestion/kingdee_ar.py
 """金蝶 AR 数据接入管道"""
 import logging
+from collections.abc import Iterator
 from datetime import datetime, timedelta
-from typing import Any, Iterator
+from typing import Any
 
 from connectors.kingdee.jdbc import KingdeeJDBC
 from connectors.kingdee.models import KingdeeARVerify

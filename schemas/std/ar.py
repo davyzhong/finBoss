@@ -1,7 +1,7 @@
 # schemas/std/ar.py
 """标准层 AR 应收模型"""
 from datetime import datetime
-from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -16,7 +16,7 @@ class StdARRecord(BaseModel):
     customer_name: str = Field(description="客户名称")
     bill_no: str = Field(description="应收单号")
     bill_date: datetime = Field(description="应收日期")
-    due_date: Optional[datetime] = Field(default=None, description="到期日期")
+    due_date: datetime | None = Field(default=None, description="到期日期")
     bill_amount: float = Field(description="应收金额")
     received_amount: float = Field(description="已收金额")
     allocated_amount: float = Field(description="已核销金额")
@@ -31,8 +31,8 @@ class StdARRecord(BaseModel):
     overdue_days: int = Field(default=0, description="逾期天数")
     status: str = Field(description="状态")
     document_status: str = Field(description="审批状态")
-    employee_name: Optional[str] = Field(default=None, description="业务员")
-    dept_name: Optional[str] = Field(default=None, description="部门")
+    employee_name: str | None = Field(default=None, description="业务员")
+    dept_name: str | None = Field(default=None, description="部门")
     etl_time: datetime = Field(description="ETL处理时间")
 
     class Config:

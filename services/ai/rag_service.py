@@ -12,6 +12,16 @@ from api.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+def _escape_milvus_str(value: str) -> str:
+    """Escape special characters in a string value for Milvus expression safety.
+
+    Milvus expressions use double quotes for string literals. An attacker could
+    inject arbitrary expression syntax via e.g.  category = 'foo" || id == "bar'.
+    This function escapes double quotes and backslashes before interpolation.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 class RAGService:
     """RAG 知识库服务 - 基于 Milvus 向量数据库"""
 
@@ -208,7 +218,7 @@ class RAGService:
         # 构建搜索表达式
         expr = None
         if category:
-            expr = f'category == "{category}"'
+            expr = f'category == "{_escape_milvus_str(category)}"'
 
         results = collection.search(
             data=[query_vector],

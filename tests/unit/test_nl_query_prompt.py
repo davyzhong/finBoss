@@ -1,10 +1,9 @@
 """测试提示词模板加载"""
-import pytest
 from services.ai.prompts import (
+    ATTRIBUTION_SYSTEM_PROMPT,
+    NL_QUERY_EXAMPLES,
     NL_QUERY_SYSTEM_PROMPT,
     RESULT_EXPLAIN_PROMPT,
-    NL_QUERY_EXAMPLES,
-    ATTRIBUTION_SYSTEM_PROMPT,
 )
 
 

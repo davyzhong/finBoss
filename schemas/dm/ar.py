@@ -1,7 +1,7 @@
 # schemas/dm/ar.py
 """数据集市层 AR 模型"""
 from datetime import datetime
-from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -42,7 +42,7 @@ class DMCustomerAR(BaseModel):
     overdue_count: int = Field(description="逾期单数")
     total_count: int = Field(description="应收单总数")
     overdue_rate: float = Field(description="逾期率")
-    last_bill_date: Optional[datetime] = Field(default=None, description="最近应收日期")
+    last_bill_date: datetime | None = Field(default=None, description="最近应收日期")
     etl_time: datetime = Field(description="ETL处理时间")
 
     class Config:

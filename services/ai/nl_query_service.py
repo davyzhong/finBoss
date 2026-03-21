@@ -3,10 +3,10 @@
 from typing import Any
 
 from services.ai.ollama_service import OllamaService
+from services.ai.prompts import NL_QUERY_SYSTEM_PROMPT, RESULT_EXPLAIN_PROMPT
 from services.ai.rag_service import RAGService
 from services.clickhouse_service import ClickHouseDataService
 from services.validators import validate_readonly_sql
-from services.ai.prompts import NL_QUERY_SYSTEM_PROMPT, RESULT_EXPLAIN_PROMPT
 
 
 class NLQueryService:

@@ -1,6 +1,6 @@
 # connectors/kingdee/client.py
 """金蝶星空 Cloud API 客户端"""
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -19,7 +19,7 @@ class KingdeeClient:
         self.app_id = app_id
         self.app_secret = app_secret
         self.timeout = timeout
-        self._token: Optional[str] = None
+        self._token: str | None = None
 
     def _get_token(self) -> str:
         """获取访问令牌"""
@@ -37,7 +37,7 @@ class KingdeeClient:
     def get(
         self,
         endpoint: str,
-        params: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """GET 请求"""
         url = f"{self.base_url}/api/v2{endpoint}"

@@ -1,6 +1,6 @@
 """金蝶数据模型定义"""
 from datetime import datetime
-from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -12,24 +12,24 @@ class KingdeeARVerify(BaseModel):
     fdate: datetime = Field(description="单据日期")
     fcustid: int = Field(description="客户ID")
     fcustname: str = Field(description="客户名称")
-    fsuppid: Optional[int] = Field(default=None, description="供应商ID")
-    fcurrencyid: Optional[int] = Field(default=None, description="币种ID")
+    fsuppid: int | None = Field(default=None, description="供应商ID")
+    fcurrencyid: int | None = Field(default=None, description="币种ID")
     fbillamount: float = Field(description="单据金额")
     fpaymentamount: float = Field(description="已付款金额")
     fallocateamount: float = Field(description="已核销金额")
     funallocateamount: float = Field(description="未核销金额")
     fstatus: str = Field(description="状态")
     fcompanyid: int = Field(description="公司ID")
-    fdeptid: Optional[int] = Field(default=None, description="部门ID")
-    femployeeid: Optional[int] = Field(default=None, description="业务员ID")
-    fcreatorid: Optional[int] = Field(default=None, description="创建人ID")
-    fcreatedate: Optional[datetime] = Field(default=None, description="创建日期")
-    fmodifierid: Optional[int] = Field(default=None, description="修改人ID")
-    fmodifydate: Optional[datetime] = Field(default=None, description="修改日期")
+    fdeptid: int | None = Field(default=None, description="部门ID")
+    femployeeid: int | None = Field(default=None, description="业务员ID")
+    fcreatorid: int | None = Field(default=None, description="创建人ID")
+    fcreatedate: datetime | None = Field(default=None, description="创建日期")
+    fmodifierid: int | None = Field(default=None, description="修改人ID")
+    fmodifydate: datetime | None = Field(default=None, description="修改日期")
     fdocumentstatus: str = Field(description="审批状态")
-    fapproverid: Optional[int] = Field(default=None, description="审核人ID")
-    fapprovetime: Optional[datetime] = Field(default=None, description="审核时间")
-    fremark: Optional[str] = Field(default=None, description="备注")
+    fapproverid: int | None = Field(default=None, description="审核人ID")
+    fapprovetime: datetime | None = Field(default=None, description="审核时间")
+    fremark: str | None = Field(default=None, description="备注")
 
     class Config:
         from_attributes = True
