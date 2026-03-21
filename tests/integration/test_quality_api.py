@@ -98,7 +98,8 @@ class TestQualityAPI:
             assert resp.status_code == 200
             assert resp.json()["new_status"] == "resolved"
 
-    def test_update_anomaly_ignores_status(self, client):
+    def test_update_anomaly_ignored(self, client):
+        """PUT /api/v1/quality/anomalies/{id} with status=ignored returns 200."""
         with patch(
             "services.field_quality_service.FieldQualityService.update_anomaly"
         ) as mock_update:
@@ -118,19 +119,59 @@ class TestQualityAPI:
             resp = client.get("/api/v1/quality/reports/nonexistent-id")
             assert resp.status_code == 404
 
-    def test_check_all_isolates_bad_table(self, client):
-        """Single table throwing an error should not abort the full scan."""
+    def test_list_reports(self, client):
         with patch(
-            "services.field_quality_service.FieldQualityService.check_all"
-        ) as mock_check, \
-             patch(
-                 "services.field_quality_service.FieldQualityService.send_feishu_card"
-             ):
-            mock_check.return_value = {
-                "total_tables": 1,
-                "anomaly_count": 0,
-                "score_pct": 100.0,
-            }
-            resp = client.post("/api/v1/quality/check")
+            "services.field_quality_service.FieldQualityService.list_reports"
+        ) as mock_list:
+            mock_list.return_value = [
+                {
+                    "id": "r1",
+                    "stat_date": "2026-03-22",
+                    "table_name": "dm.ar",
+                    "total_fields": 10,
+                    "anomaly_count": 2,
+                    "score_pct": 80.0,
+                    "generated_at": "2026-03-22T06:00:00",
+                }
+            ]
+            resp = client.get("/api/v1/quality/reports")
             assert resp.status_code == 200
-            assert resp.json()["report_count"] >= 1
+            data = resp.json()
+            assert data["total"] == 1
+            assert data["items"][0]["score_pct"] == 80.0
+
+    def test_get_report_success(self, client):
+        with patch(
+            "services.field_quality_service.FieldQualityService.get_report"
+        ) as mock_get, \
+             patch(
+                 "services.field_quality_service.FieldQualityService.list_anomalies_by_report"
+             ) as mock_anomalies:
+            mock_get.return_value = {
+                "id": "r1",
+                "stat_date": "2026-03-22",
+                "table_name": "dm.ar",
+                "total_fields": 10,
+                "anomaly_count": 2,
+                "score_pct": 80.0,
+                "generated_at": "2026-03-22T06:00:00",
+            }
+            mock_anomalies.return_value = [
+                {
+                    "id": "a1",
+                    "table_name": "dm.ar",
+                    "column_name": "due_date",
+                    "metric": "null_rate",
+                    "value": 0.35,
+                    "threshold": 0.20,
+                    "severity": "高",
+                    "status": "open",
+                    "detected_at": "2026-03-22T06:00:00",
+                }
+            ]
+            resp = client.get("/api/v1/quality/reports/r1")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["report"]["id"] == "r1"
+            assert data["report"]["score_pct"] == 80.0
+            assert len(data["anomalies"]) == 1

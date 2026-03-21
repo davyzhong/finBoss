@@ -270,7 +270,7 @@ class FieldQualityService:
         )
 
     def list_anomalies(self, status: str | None, limit: int = 100) -> list[dict]:
-        where = f"status = '{status}'" if status else "1=1"
+        where = f"status = '{status}'" if status else "status = 'open'"
         return self._ch.execute_query(
             f"SELECT * FROM dm.quality_anomalies "
             f"WHERE {where} "
