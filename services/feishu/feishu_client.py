@@ -101,6 +101,9 @@ class FeishuClient:
             是否发送成功
         """
         config = get_feishu_config()
+        if not queue_items:
+            return True  # Nothing to send
+
         if not config.ops_channel_id:
             import logging
             logging.getLogger(__name__).warning(
@@ -112,6 +115,8 @@ class FeishuClient:
 
         success = True
         for item in queue_items:
+            if not hasattr(item, 'match_result') or not item.match_result:
+                continue
             card = build_merge_card(item.match_result, queue_id=item.id)
             if not self.send_card_to_channel(card, channel_id=config.ops_channel_id):
                 success = False
