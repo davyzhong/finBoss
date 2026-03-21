@@ -41,8 +41,9 @@ class FieldQualityService:
         rows = self._ch.execute_query(
             "SELECT database, name FROM system.tables "
             "WHERE database IN ('raw', 'std', 'dm') "
-            "  AND name NOT LIKE '%\\_tmp' "
-            "  AND engine NOT LIKE '%Temp%' "
+            "  AND name NOT LIKE '%%\\_tmp' "
+            "  AND engine NOT LIKE '%%Temp%%' "
+            "  AND name NOT IN ('quality_reports', 'quality_anomalies') "
             "ORDER BY database, name"
         )
         return [f"{r['database']}.{r['name']}" for r in rows]
@@ -54,7 +55,7 @@ class FieldQualityService:
             return []
         safe_name = name.replace("'", "''")
         rows = self._ch.execute_query(
-            f"SELECT column_name, type FROM system.columns "
+            f"SELECT name AS column_name, type FROM system.columns "
             f"WHERE database = '{db}' AND table = '{safe_name}' "
             f"ORDER BY position"
         )
@@ -163,7 +164,7 @@ class FieldQualityService:
     def check_all(self, stat_date: date | None = None) -> dict[str, Any]:
         stat_date = stat_date or date.today()
         today_str = stat_date.isoformat()
-        now_str = datetime.now().isoformat()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         report_id = str(uuid.uuid4())
 
         tables = self.list_monitored_tables()
@@ -290,7 +291,7 @@ class FieldQualityService:
             raise ValueError(f"Invalid status: {status}")
         # Escape anomaly_id (UUID, but defensive)
         safe_id = anomaly_id.replace("'", "''")
-        now_str = datetime.now().isoformat()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         resolved_at = f"'{now_str}'" if status == "resolved" else "toDateTime('1970-01-01 00:00:00')"
         self._ch.execute(
             f"ALTER TABLE dm.quality_anomalies "
