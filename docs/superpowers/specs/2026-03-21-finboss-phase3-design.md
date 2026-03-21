@@ -296,10 +296,13 @@ def calc_confidence(sql_result: list[dict], dimension: str) -> float:
 
     if all_values:
         max_val = max(all_values)
+        min_val = min(all_values)
         avg_val = sum(all_values) / len(all_values)
-        if max_val > 0:
+        # 有变化（不为常数集）：+0.3
+        if max_val != min_val:
             score += 0.3
-        if avg_val > 0 and max_val / avg_val > 3:
+        # 变化幅度显著（极值/均值 > 3）：+0.2
+        if avg_val != 0 and max(abs(max_val), abs(min_val)) / avg_val > 3:
             score += 0.2
 
     return min(score, 1.0)
@@ -545,7 +548,7 @@ NL_QUERY_EXAMPLES = [
     },
     {
         "question": "哪些客户有逾期账款",
-        "sql": "SELECT customer_name, overdue_amount FROM dm.dm_customer_ar WHERE overdue_amount > 0 ORDER BY overdue_amount DESC",
+        "sql": "SELECT customer_name, overdue_amount, company_code FROM dm.dm_customer_ar WHERE overdue_amount > 0 ORDER BY overdue_amount DESC",
     },
     {
         "question": "C001公司的逾期率",
@@ -561,12 +564,42 @@ ATTRIBUTION_SYSTEM_PROMPT = """你是一个专业的财务归因分析师。
 
 ## 你的任务
 当用户询问"为什么XXX"时，你需要：
-1. 生成 3 个可能的假设（客户维度、产品维度、时间维度）
+1. 生成 3 个可能的假设（客户维度、时间维度）
 2. 解释每个假设的合理性
 3. 提出验证所需的 SQL 查询
 
 ## 数据库架构
-{DATABASE_SCHEMA}
+
+dm.dm_ar_summary (AR 汇总表):
+| stat_date | Date | 统计日期 |
+| company_code | String | 公司代码 |
+| company_name | String | 公司名称 |
+| total_ar_amount | Decimal(18,2) | 应收总额 |
+| received_amount | Decimal(18,2) | 已收金额 |
+| overdue_amount | Decimal(18,2) | 逾期金额 |
+| overdue_count | Int32 | 逾期单数 |
+| total_count | Int32 | 总单数 |
+| overdue_rate | Float32 | 逾期率 |
+
+dm.dm_customer_ar (客户 AR 表):
+| stat_date | Date | 统计日期 |
+| customer_code | String | 客户代码 |
+| customer_name | String | 客户名称 |
+| company_code | String | 公司代码 |
+| total_ar_amount | Decimal(18,2) | 应收总额 |
+| overdue_amount | Decimal(18,2) | 逾期金额 |
+| overdue_count | Int32 | 逾期单数 |
+| total_count | Int32 | 应收单总数 |
+| overdue_rate | Float32 | 逾期率 |
+
+std.std_ar (AR 明细表):
+| id | String | 单据ID |
+| bill_no | String | 单据编号 |
+| bill_date | DateTime | 单据日期 |
+| bill_amount | Decimal(18,2) | 单据金额 |
+| customer_name | String | 客户名称 |
+| is_overdue | Bool | 是否逾期 |
+| company_code | String | 公司代码 |
 
 ## 输出格式
 必须返回 JSON 格式：
