@@ -9,6 +9,8 @@ from jinja2 import Environment, FileSystemLoader
 
 from services.clickhouse_service import ClickHouseDataService
 
+logger = logging.getLogger(__name__)
+
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
@@ -47,9 +49,13 @@ class FieldQualityService:
 
     def list_columns(self, table_name: str) -> list[dict[str, str]]:
         db, name = table_name.split(".", 1)
+        # Whitelist db and escape table name to prevent SQL injection
+        if db not in ("raw", "std", "dm"):
+            return []
+        safe_name = name.replace("'", "''")
         rows = self._ch.execute_query(
             f"SELECT column_name, type FROM system.columns "
-            f"WHERE database = '{db}' AND table = '{name}' "
+            f"WHERE database = '{db}' AND table = '{safe_name}' "
             f"ORDER BY position"
         )
         return rows
@@ -188,7 +194,7 @@ class FieldQualityService:
                     f"{len(table_anomalies)}, {score_pct:.2f}, '{now_str}')"
                 )
             except Exception as e:
-                logging.getLogger(__name__).warning(f"[FieldQuality] Skipping {table_name}: {e}")
+                logger.warning(f"[FieldQuality] Skipping {table_name}: {e}")
                 continue
 
         for a in all_anomalies:
@@ -279,12 +285,17 @@ class FieldQualityService:
         )
 
     def update_anomaly(self, anomaly_id: str, status: str) -> None:
+        # Whitelist status to prevent SQL injection
+        if status not in ("resolved", "ignored"):
+            raise ValueError(f"Invalid status: {status}")
+        # Escape anomaly_id (UUID, but defensive)
+        safe_id = anomaly_id.replace("'", "''")
         now_str = datetime.now().isoformat()
         resolved_at = f"'{now_str}'" if status == "resolved" else "toDateTime('1970-01-01 00:00:00')"
         self._ch.execute(
             f"ALTER TABLE dm.quality_anomalies "
             f"UPDATE status = '{status}', resolved_at = {resolved_at} "
-            f"WHERE id = '{anomaly_id}'"
+            f"WHERE id = '{safe_id}'"
         )
 
     # ------------------------------------------------------------------
