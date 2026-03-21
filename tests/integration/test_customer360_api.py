@@ -232,3 +232,77 @@ class TestMergeQueueRejectAPI:
         assert data["id"] == "mq_002"
         assert data["status"] == "rejected"
         mock_customer360_service.reject_merge.assert_called_once_with("mq_002")
+
+
+class TestCustomer360UndoAPI:
+    def test_undo_merge_returns_200(self, client, mock_customer360_service):
+        mock_customer360_service.undo_merge.return_value = {
+            "customer_code": "C360_T001",
+            "original_customer_id": "K001",
+            "status": "undone",
+            "reason": "测试撤销",
+        }
+        response = client.post(
+            "/api/v1/customer360/C360_T001/undo",
+            json={"original_customer_id": "K001", "reason": "测试撤销"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["customer_code"] == "C360_T001"
+        assert data["original_customer_id"] == "K001"
+        assert data["status"] == "undone"
+        mock_customer360_service.undo_merge.assert_called_once_with(
+            unified_customer_code="C360_T001",
+            original_customer_id="K001",
+            reason="测试撤销",
+        )
+
+    def test_undo_merge_without_reason(self, client, mock_customer360_service):
+        mock_customer360_service.undo_merge.return_value = {
+            "customer_code": "C360_T002",
+            "original_customer_id": "K002",
+            "status": "undone",
+            "reason": "",
+        }
+        response = client.post(
+            "/api/v1/customer360/C360_T002/undo",
+            json={"original_customer_id": "K002"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "undone"
+        mock_customer360_service.undo_merge.assert_called_once_with(
+            unified_customer_code="C360_T002",
+            original_customer_id="K002",
+            reason="",
+        )
+
+
+class TestCustomer360AttributionAPI:
+    def test_get_attribution_returns_200(self, client, mock_customer360_service):
+        mock_customer360_service.get_attribution_data.return_value = {
+            "dimension": "company",
+            "data": [
+                {"company": "C001", "ar_change": 50000.0, "change_rate": 0.05},
+                {"company": "C002", "ar_change": -20000.0, "change_rate": -0.02},
+            ],
+        }
+        response = client.get(
+            "/api/v1/customer360/attribution?start_date=2026-01-01&end_date=2026-03-01"
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["dimension"] == "company"
+        assert len(data["data"]) == 2
+        mock_customer360_service.get_attribution_data.assert_called_once()
+
+    def test_get_attribution_missing_params(self, client, mock_customer360_service):
+        response = client.get("/api/v1/customer360/attribution")
+        assert response.status_code == 422  # missing required query params
+
+    def test_get_attribution_invalid_date_format(self, client, mock_customer360_service):
+        response = client.get(
+            "/api/v1/customer360/attribution?start_date=invalid&end_date=2026-03-01"
+        )
+        assert response.status_code == 400
+        assert "无效的日期格式" in response.json()["detail"]
