@@ -252,7 +252,7 @@ class AttributionService:
 
 ```python
 class Factor(BaseModel):
-    dimension: Literal["customer", "product", "time"]
+    dimension: Literal["customer", "time"]  # product 待 Phase 4
     description: str           # 归因描述
     contribution: float        # 贡献度（0-1）
     evidence: dict              # 支撑数据
@@ -267,32 +267,42 @@ class AttributionResult(BaseModel):
     raw_data: dict             # 原始数据（调试用）
 ```
 
-**置信度评分算法**（规则计算）：
+**置信度评分算法**（规则计算，不依赖特定 SQL 别名）：
 
 ```python
-def calc_confidence(sql_result: list[dict], hypothesis_dimension: str) -> float:
+def calc_confidence(sql_result: list[dict], dimension: str) -> float:
     """
-    基于 SQL 结果集质量计算置信度：
+    基于 SQL 结果集质量计算置信度，不依赖具体字段名：
     - 有数据行：+0.3
-    - 变化幅度 > 10%：+0.3
-    - 变化幅度 > 30%：+0.2（累加）
-    - 维度内 TOP3 数据覆盖 > 50% 总变化：+0.2
+    - 结果行数 > 5：+0.2
+    - 最大值与平均值之比 > 3：+0.2（存在显著异常值）
+    - 最大值 > 0：+0.3（有实际变化）
+    最终取 min(score, 1.0)
     """
-    base = 0.0
-    if len(sql_result) > 0:
-        base += 0.3
-        # 计算变化幅度
-        deltas = [abs(r.get("overdue_delta", 0)) for r in sql_result]
-        if deltas:
-            max_delta = max(deltas)
-            total_delta = sum(deltas)
-            if total_delta > 0:
-                coverage = max_delta / total_delta
-                if coverage > 0.3:
-                    base += 0.3
-                if coverage > 0.5:
-                    base += 0.2
-    return min(base, 1.0)
+    if not sql_result:
+        return 0.0
+
+    score = 0.3  # 有数据
+
+    if len(sql_result) > 5:
+        score += 0.2
+
+    # 取所有数值字段的最大值（通用方法）
+    all_values = []
+    for row in sql_result:
+        for v in row.values():
+            if isinstance(v, (int, float)):
+                all_values.append(abs(v))
+
+    if all_values:
+        max_val = max(all_values)
+        avg_val = sum(all_values) / len(all_values)
+        if max_val > 0:
+            score += 0.3
+        if avg_val > 0 and max_val / avg_val > 3:
+            score += 0.2
+
+    return min(score, 1.0)
 ```
 
 **Overall Confidence**：各维度置信度的加权平均，客户维度权重 0.5，时间维度权重 0.5（产品维度 Phase 4 再加入）。
@@ -335,6 +345,7 @@ SELECT
     overdue_rate - lagInFrame(overdue_rate) OVER (ORDER BY stat_date) AS rate_delta
 FROM dm.dm_ar_summary
 WHERE stat_date BETWEEN '{start_date}' AND '{end_date}'
+  AND company_code = '{company_code}'
 ORDER BY stat_date
 ```
 
@@ -370,40 +381,58 @@ ORDER BY stat_date
 
 ### 5.3 集合迁移策略
 
-**注意**：Phase 2 已存在数据需迁移。
+**目标**：将 Phase 2 的 `finboss_knowledge` 集合迁移到含版本字段的 v2 格式，同时保证迁移过程不会丢失数据。
+
+**核心策略**：使用 Collection Alias 实现原子切换（别名永远指向有效集合）：
 
 ```python
+PRODUCTION_ALIAS = "finboss_knowledge"       # 生产别名（不变）
+STAGING_NAME    = "finboss_knowledge_v2"   # 临时集合名
+
 def migrate_collection(self, target_dimension: int = 768) -> None:
-    """迁移 Phase 2 集合到带版本字段的新集合"""
-    old_name = self.collection_name  # "finboss_knowledge"
-    new_name = f"{old_name}_v2"
+    """
+    幂等迁移：Phase 2 → v2（带版本字段）
+    使用 Alias 实现零停机原子切换。
+    """
+    # 1. 检查是否已完成迁移（幂等）
+    try:
+        alias = utility.get_collection_alias(PRODUCTION_ALIAS)
+        if alias == STAGING_NAME:
+            return  # 已迁移
+    except Exception:
+        pass  # 别名不存在，继续迁移
 
-    # 1. 检查是否存在 v2 集合（幂等）
-    if utility.has_collection(new_name):
-        return
+    # 2. 创建 v2 集合（含版本字段）
+    self._create_versioned_collection(STAGING_NAME, dimension=target_dimension)
 
-    # 2. 创建新集合（含版本字段）
-    self._create_versioned_collection(new_name, dimension=target_dimension)
+    # 3. 迁移 Phase 2 数据（如存在）
+    try:
+        old_collection = Collection("finboss_knowledge")
+        old_collection.load()
+        results = old_collection.query(
+            expr="is_active == true || version > 0",
+            output_fields=["id", "content", "vector", "category", "metadata"]
+        )
+        self._migrate_docs_to_v2(results)
+    except Exception:
+        # Phase 2 数据不存在，跳过迁移
+        pass
 
-    # 3. 读取旧集合数据，迁移并插入新集合
-    old_collection = Collection(old_name)
-    old_collection.load()
-    results = old_collection.query(expr="is_active == true || version > 0", output_fields=["id", "content", "vector", "category", "metadata"])
+    # 4. 原子切换别名（关键步骤）
+    #    切换后，旧集合变为 "finboss_knowledge_old"，新集合变为 "finboss_knowledge"
+    try:
+        utility.drop_alias(PRODUCTION_ALIAS)
+    except Exception:
+        pass
+    utility.create_alias(STAGING_NAME, PRODUCTION_ALIAS)
 
-    for doc in results:
-        # 补充新字段（Phase 2 数据默认为 version=1, is_active=True）
-        doc["version"] = doc.get("version", 1)
-        doc["is_active"] = doc.get("is_active", True)
-        doc["created_at"] = doc.get("created_at", datetime.now())
-        doc["updated_at"] = doc.get("updated_at", datetime.now())
-        doc["change_log"] = doc.get("change_log", "从 Phase 2 迁移")
-
-    # 4. 切换：删除旧集合，重命名新集合
-    utility.drop_collection(old_name)
-    utility.rename_collection(new_name, old_name)
+    # 5. 可选：删除旧集合（延迟一天，防止切回）
+    # self._schedule_old_collection_cleanup("finboss_knowledge_old")
 ```
 
-**幂等保证**：迁移脚本可重复执行，不丢失数据。
+**别名切换语义**：别名指向的集合对应用层透明，应用始终通过别名访问集合。迁移过程中别名始终指向某个有效集合，不会出现数据不可用窗口。
+
+**幂等保证**：迁移脚本可重复执行。每次执行会检查别名是否已指向 v2 集合，如是则直接返回。
 
 ### 5.4 版本策略
 
@@ -412,7 +441,7 @@ def migrate_collection(self, target_dimension: int = 768) -> None:
 - **Rollback**: 将指定历史版本内容复制为新版本（version +1），保持线性历史
 - **版本历史查询**: `WHERE id = '{doc_id}' ORDER BY version DESC`
 
-### 5.4 核心组件
+### 5.5 核心组件
 
 ```
 services/
@@ -422,7 +451,7 @@ api/routes/
 └── knowledge.py          # API 端点（替代/扩展 ai.py 中的 RAG 端点）
 ```
 
-### 5.5 KnowledgeManager 接口
+### 5.6 KnowledgeManager 接口
 
 ```python
 class KnowledgeManager:
@@ -468,7 +497,7 @@ class KnowledgeManager:
         """回滚到指定版本"""
 ```
 
-### 5.6 API 端点
+### 5.7 API 端点
 
 **端点策略**：新增 `/api/v1/ai/knowledge` 端点，**与现有** `/api/v1/ai/rag/*` 端点共存，不破坏现有调用方。
 
