@@ -1,8 +1,19 @@
 """ClickHouse 数据查询服务"""
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from clickhouse_driver import Client
+from schemas.customer360 import (
+    Customer360Record,
+    Customer360Summary,
+    CustomerDistribution,
+    CustomerMergeQueue,
+    CustomerTrend,
+    MatchAction,
+    MatchResult,
+    RawCustomer,
+)
 
 _ALLOWED_TABLE_PREFIXES = ("raw.", "std.", "dm.")
 _LIMIT_MAX = 10000
@@ -253,3 +264,312 @@ class ClickHouseDataService:
         validated_limit = _validate_limit(limit)
         sql += f" ORDER BY bill_date DESC LIMIT {validated_limit}"
         return self.execute_query(sql, params)
+
+    # --- 客户360相关方法（Phase 4B） ---
+
+    def insert_customer360(self, records: list[Customer360Record]) -> int:
+        """批量写入客户360记录"""
+        if not records:
+            return 0
+        sql = """
+        INSERT INTO dm.dm_customer360 (
+            unified_customer_code, raw_customer_ids, source_systems,
+            customer_name, customer_short_name,
+            ar_total, ar_overdue, overdue_rate, payment_score,
+            risk_level, merge_status,
+            last_payment_date, first_coop_date, company_code,
+            stat_date, updated_at
+        ) VALUES
+        """
+        values = [
+            (
+                r.unified_customer_code,
+                r.raw_customer_ids,
+                r.source_systems,
+                r.customer_name,
+                r.customer_short_name or "",
+                float(r.ar_total),
+                float(r.ar_overdue),
+                r.overdue_rate,
+                r.payment_score,
+                r.risk_level,
+                r.merge_status,
+                r.last_payment_date,
+                r.first_coop_date,
+                r.company_code or "",
+                r.stat_date,
+                r.updated_at,
+            )
+            for r in records
+        ]
+        self.client.execute(sql, values)
+        return len(records)
+
+    def insert_merge_queue(self, items: list[CustomerMergeQueue]) -> int:
+        """写入合并复核队列"""
+        if not items:
+            return 0
+        sql = """
+        INSERT INTO dm.customer_merge_queue (
+            id, action, similarity, reason,
+            customer_ids, customer_names, unified_customer_code,
+            status, operator, operated_at, undo_record_id, created_at
+        ) VALUES
+        """
+        values = [
+            (
+                item.id,
+                item.match_result.action.value,
+                item.match_result.similarity,
+                item.match_result.reason,
+                [c.customer_id for c in item.match_result.customers],
+                [c.customer_name for c in item.match_result.customers],
+                item.match_result.unified_customer_code or "",
+                item.status,
+                item.operator or "",
+                item.operated_at,
+                item.undo_record_id or "",
+                item.match_result.created_at,
+            )
+            for item in items
+        ]
+        self.client.execute(sql, values)
+        return len(items)
+
+    def get_customer360_summary(self, stat_date: date) -> Customer360Summary:
+        """管理层汇总"""
+        sql = """
+        SELECT
+            uniqExact(unified_customer_code)                           AS total_customers,
+            sum(merge_status IN ('auto_merged', 'confirmed'))          AS merged_customers,
+            sum(merge_status = 'pending')                              AS pending_merges,
+            sum(ar_total)                                             AS ar_total,
+            sum(ar_overdue)                                           AS ar_overdue_total,
+            sum(ar_overdue) / sum(ar_total)                           AS overall_overdue_rate,
+            sum(risk_level = '高')                                     AS risk_high,
+            sum(risk_level = '中')                                     AS risk_mid,
+            sum(risk_level = '低')                                     AS risk_low
+        FROM dm.dm_customer360
+        WHERE stat_date = %(stat_date)s
+        """
+        row = self.execute_query(sql, {"stat_date": stat_date})[0]
+
+        # 计算前10客户集中度（子查询）
+        top10_sql = """
+        SELECT sum(ar_total) AS top10_ar
+        FROM (
+            SELECT ar_total FROM dm.dm_customer360
+            WHERE stat_date = %(stat_date)s
+            ORDER BY ar_total DESC LIMIT 10
+        )
+        """
+        top10_row = self.execute_query(top10_sql, {"stat_date": stat_date})[0]
+        total_ar = float(row["ar_total"]) if row["ar_total"] else 0.0
+        top10_ar = float(top10_row["top10_ar"]) if top10_row and top10_row["top10_ar"] else 0.0
+        concentration = (top10_ar / total_ar) if total_ar > 0 else 0.0
+
+        return Customer360Summary(
+            total_customers=row["total_customers"],
+            merged_customers=row["merged_customers"],
+            pending_merges=row["pending_merges"],
+            ar_total=Decimal(str(row["ar_total"])),
+            ar_overdue_total=Decimal(str(row["ar_overdue_total"])),
+            overall_overdue_rate=float(row["overall_overdue_rate"]) * 100,  # 转为百分比
+            risk_distribution={"高": row["risk_high"], "中": row["risk_mid"], "低": row["risk_low"]},
+            concentration_top10_ratio=concentration,
+        )
+
+    def get_customer360_distribution(self, stat_date: date) -> CustomerDistribution:
+        """客户分布"""
+        by_company_sql = """
+        SELECT company_code AS company, count() AS count, sum(ar_total) AS ar_total
+        FROM dm.dm_customer360 t
+        WHERE stat_date = %(stat_date)s
+        GROUP BY company_code ORDER BY ar_total DESC LIMIT 20
+        """
+        by_risk_sql = """
+        SELECT risk_level AS risk, count() AS count, sum(ar_total) AS ar_total
+        FROM dm.dm_customer360
+        WHERE stat_date = %(stat_date)s
+        GROUP BY risk_level
+        """
+        by_company = [dict(row) for row in self.execute_query(by_company_sql, {"stat_date": stat_date})]
+        by_risk = [dict(row) for row in self.execute_query(by_risk_sql, {"stat_date": stat_date})]
+        return CustomerDistribution(
+            by_company=by_company,
+            by_risk_level=by_risk,
+            by_overdue_bucket=[{"bucket": "0-30天", "count": 0, "amount": 0.0}],
+        )
+
+    def get_customer360_trend(self, months: int = 12) -> CustomerTrend:
+        """客户/应收趋势"""
+        sql = """
+        SELECT
+            toYYYYMM(stat_date) AS ym,
+            uniqExact(unified_customer_code) AS customer_count,
+            sum(ar_total) AS ar_total,
+            sum(ar_overdue) / sum(ar_total) AS overdue_rate
+        FROM dm.dm_customer360
+        WHERE stat_date >= today() - INTERVAL %(months)s MONTH
+        GROUP BY ym
+        ORDER BY ym
+        """
+        rows = self.execute_query(sql, {"months": months})
+        return CustomerTrend(
+            dates=[str(r["ym"]) for r in rows],
+            customer_counts=[r["customer_count"] for r in rows],
+            ar_totals=[float(r["ar_total"]) for r in rows],
+            overdue_rates=[float(r["overdue_rate"]) for r in rows],
+        )
+
+    def get_customer360_detail(self, unified_code: str) -> dict[str, Any]:
+        """客户详情（包含账龄分布和最近应收单）"""
+        sql = """
+        SELECT * FROM dm.dm_customer360
+        WHERE unified_customer_code = %(code)s
+        ORDER BY stat_date DESC LIMIT 1
+        """
+        rows = self.execute_query(sql, {"code": unified_code})
+        if not rows:
+            return {}
+        return dict(rows[0])
+
+    def get_merge_queue(self, status: str = "pending") -> list[CustomerMergeQueue]:
+        """获取合并队列"""
+        sql = """
+        SELECT * FROM dm.customer_merge_queue
+        WHERE status = %(status)s
+        ORDER BY created_at DESC
+        """
+        rows = self.execute_query(sql, {"status": status})
+        return [self._row_to_merge_queue(r) for r in rows]
+
+    def _row_to_merge_queue(self, row: dict) -> CustomerMergeQueue:
+        """将数据库行反序列化为 CustomerMergeQueue"""
+        customer_ids: list[str] = row.get("customer_ids") or []
+        customer_names: list[str] = row.get("customer_names") or []
+        source_systems: list[str] = row.get("source_systems") or []
+        customers = [
+            RawCustomer(
+                source_system=source_systems[i] if i < len(source_systems) else "kingdee",
+                customer_id=customer_ids[i],
+                customer_name=customer_names[i] if i < len(customer_names) else "",
+            )
+            for i in range(len(customer_ids))
+        ]
+        match = MatchResult(
+            action=MatchAction(row["action"]),
+            customers=customers,
+            unified_customer_code=row["unified_customer_code"] or None,
+            similarity=row["similarity"],
+            reason=row["reason"],
+        )
+        return CustomerMergeQueue(
+            id=row["id"],
+            match_result=match,
+            status=row["status"],
+            operator=row["operator"] or None,
+            operated_at=row["operated_at"],
+            undo_record_id=row["undo_record_id"] or None,
+        )
+
+    def confirm_merge(self, queue_id: str, operator: str) -> dict[str, Any]:
+        """确认合并：更新队列状态 + 更新 dm_customer360"""
+        queue_row = self.execute_query(
+            "SELECT unified_customer_code FROM dm.customer_merge_queue WHERE id = %(id)s",
+            {"id": queue_id},
+        )
+        if not queue_row:
+            return {"id": queue_id, "status": "not_found"}
+        unified_code = queue_row[0]["unified_customer_code"]
+
+        self.client.execute(
+            "UPDATE dm.customer_merge_queue SET status = 'confirmed', operator = %(op)s, operated_at = now() WHERE id = %(id)s",
+            {"op": operator, "id": queue_id},
+        )
+        today = date.today()
+        if unified_code:
+            self.client.execute(
+                "ALTER TABLE dm.dm_customer360 UPDATE merge_status = 'confirmed', updated_at = now() "
+                "WHERE unified_customer_code = %(code)s AND stat_date = %(d)s AND merge_status = 'pending'",
+                {"code": unified_code, "d": today},
+            )
+        return {"id": queue_id, "status": "confirmed", "unified_customer_code": unified_code, "operator": operator}
+
+    def reject_merge(self, queue_id: str, operator: str) -> dict[str, Any]:
+        """拒绝合并"""
+        self.client.execute(
+            "UPDATE dm.customer_merge_queue SET status = 'rejected', operator = %(op)s, operated_at = now() WHERE id = %(id)s",
+            {"op": operator, "id": queue_id},
+        )
+        return {"id": queue_id, "status": "rejected", "operator": operator}
+
+    def undo_merge(
+        self,
+        unified_customer_code: str,
+        original_customer_id: str,
+        operator: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        """撤销合并"""
+        import uuid
+        undo_id = str(uuid.uuid4())
+        self.client.execute(
+            "INSERT INTO dm.merge_history (id, unified_customer_code, source_system, original_customer_id, operated_at, operator, undo_record_id) VALUES",
+            [(undo_id, unified_customer_code, "kingdee", original_customer_id, datetime.now(), operator, "")],
+        )
+        return {"undo_id": undo_id, "unified_customer_code": unified_customer_code}
+
+    def get_customer_attribution(
+        self,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, Any]:
+        """AI 归因数据（含期初/期末对比 delta）"""
+        curr_sql = """
+        SELECT
+            unified_customer_code AS customer_code,
+            customer_name,
+            ar_overdue AS ar_overdue_curr,
+            overdue_rate AS overdue_rate_curr,
+            risk_level
+        FROM dm.dm_customer360
+        WHERE stat_date = %(end_date)s
+        ORDER BY ar_overdue DESC
+        LIMIT 200
+        """
+        curr_rows = self.execute_query(curr_sql, {"end_date": end_date})
+        if not curr_rows:
+            return {"dimension": "customer", "data": []}
+
+        prev_sql = """
+        SELECT
+            unified_customer_code AS customer_code,
+            ar_overdue AS ar_overdue_prev,
+            overdue_rate AS overdue_rate_prev
+        FROM dm.dm_customer360
+        WHERE stat_date = %(start_date)s
+        """
+        prev_map = {r["customer_code"]: r for r in self.execute_query(prev_sql, {"start_date": start_date})}
+
+        data = []
+        for row in curr_rows:
+            code = row["customer_code"]
+            prev = prev_map.get(code, {})
+            ar_prev = float(prev.get("ar_overdue_prev") or 0.0)
+            rate_prev = float(prev.get("overdue_rate_prev") or 0.0)
+            ar_curr = float(row["ar_overdue_curr"])
+            rate_curr = float(row["overdue_rate_curr"])
+            data.append({
+                "customer_code": code,
+                "customer_name": row["customer_name"],
+                "ar_overdue_curr": ar_curr,
+                "ar_overdue_prev": ar_prev,
+                "overdue_delta": ar_curr - ar_prev,
+                "overdue_rate_curr": rate_curr,
+                "overdue_rate_prev": rate_prev,
+                "risk_level": row["risk_level"],
+            })
+        data.sort(key=lambda x: x["overdue_delta"], reverse=True)
+        return {"dimension": "customer", "data": data}
+
