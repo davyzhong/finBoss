@@ -3,7 +3,6 @@
 import hashlib
 import logging
 from datetime import datetime, timedelta
-from uuid import uuid4
 
 from schemas.raw.kingdee import RawARVerify
 from schemas.std.ar import StdARRecord

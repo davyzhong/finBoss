@@ -102,6 +102,25 @@ finBoss/
 - [x] 提示词优化（含 Few-shot Examples）
 - [x] 知识版本管理（CRUD + 版本历史 + 回滚）
 
+### Phase 4 ✅ 代码质量与安全加固 (已完成)
+
+**P0 安全修复（3 项）**
+- [x] Milvus 表达式注入：`category`/`doc_id` 插值前添加 `_escape_milvus_str()` 转义
+- [x] ClickHouse LIMIT 注入：新增 `_validate_limit()` 范围校验，新增 `_validate_table_name()` 白名单前缀校验
+- [x] Attribution SQL 模板注入：模板变量从 `'{var}'` 改为 `{var}`，改用 `execute_query(sql, sql_params)` 参数化查询
+
+**P1 可靠性修复（5 项）**
+- [x] 连接池：`@lru_cache` 替换服务工厂函数，消除每次请求新建实例的开销
+- [x] 消息去重：`set()` → `OrderedDict` FIFO 驱逐策略，避免内存泄漏
+- [x] Schema 一致性：`QualityCheckResponse.passed`/`failed_rules` → `passed_count`/`failed_count`
+- [x] SQL 查询表名白名单：新增表名前缀 `raw.`/`std.`/`dm.` 校验
+- [x] 共享聚合逻辑：抽取 `pipelines/marts/ar_aggregations.py`，消除 `ar_service.py` 和 `dm_ar.py` 的重复计算
+
+**P2 增强改进（3 项）**
+- [x] Ollama httpx 0.26+ 兼容：所有方法重构为 `async` + `httpx.AsyncClient`，同步方法通过 `run_until_complete` 桥接
+- [x] CORS 可配置：`APP_CORS_ORIGINS` 环境变量支持逗号分隔列表
+- [x] SQL 验证增强：黑名单 → sqlglot AST 白名单（`SELECT DELETED` 等合法列名不再误判）
+
 ## API 文档
 
 启动服务后访问:

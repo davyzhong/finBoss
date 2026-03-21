@@ -1,8 +1,8 @@
 # services/ar_service.py
 """AR 应收业务服务"""
 from datetime import datetime
-from typing import Optional
 
+from pipelines.marts.ar_aggregations import aggregate_aging_buckets, calc_overdue_rate, filter_overdue
 from schemas.dm.ar import DMARSummary, DMCustomerAR
 from schemas.std.ar import StdARRecord
 
@@ -16,7 +16,7 @@ class ARService:
     def calculate_aging(
         self,
         bill_date: datetime,
-        current_date: Optional[datetime] = None,
+        current_date: datetime | None = None,
     ) -> tuple[int, str]:
         """计算账龄
 
@@ -46,7 +46,7 @@ class ARService:
 
     def is_overdue(
         self,
-        due_date: Optional[datetime],
+        due_date: datetime | None,
         aging_days: int,
     ) -> tuple[bool, int]:
         """判断是否逾期
@@ -68,7 +68,7 @@ class ARService:
     def summarize_by_company(
         self,
         records: list[StdARRecord],
-        stat_date: Optional[datetime] = None,
+        stat_date: datetime | None = None,
     ) -> DMARSummary:
         """按公司汇总 AR 数据
 
@@ -110,42 +110,37 @@ class ARService:
         allocated = sum(r.allocated_amount for r in records)
         unallocated = sum(r.unallocated_amount for r in records)
 
-        overdue_records = [r for r in records if r.is_overdue]
+        aging_buckets = aggregate_aging_buckets(records)
+        overdue_records = filter_overdue(records)
         overdue_amount = sum(r.unallocated_amount for r in overdue_records)
         overdue_count = len(overdue_records)
         total_count = len(records)
-        overdue_rate = overdue_count / total_count if total_count > 0 else 0.0
-
-        aging_0_30 = sum(r.unallocated_amount for r in records if r.aging_bucket == "0-30")
-        aging_31_60 = sum(r.unallocated_amount for r in records if r.aging_bucket == "31-60")
-        aging_61_90 = sum(r.unallocated_amount for r in records if r.aging_bucket == "61-90")
-        aging_91_180 = sum(r.unallocated_amount for r in records if r.aging_bucket == "91-180")
-        aging_180_plus = sum(r.unallocated_amount for r in records if r.aging_bucket == "180+")
+        overdue_rate = calc_overdue_rate(overdue_count, total_count)
 
         return DMARSummary(
             stat_date=stat_date,
             company_code=first_record.company_code,
             company_name=first_record.company_name,
-            total_ar_amount=total_ar,
-            received_amount=received,
-            allocated_amount=allocated,
-            unallocated_amount=unallocated,
+            total_ar_amount=sum(r.bill_amount_base for r in records),
+            received_amount=sum(r.received_amount_base for r in records),
+            allocated_amount=sum(r.allocated_amount for r in records),
+            unallocated_amount=sum(r.unallocated_amount for r in records),
             overdue_amount=overdue_amount,
             overdue_count=overdue_count,
             total_count=total_count,
-            overdue_rate=round(overdue_rate, 4),
-            aging_0_30=aging_0_30,
-            aging_31_60=aging_31_60,
-            aging_61_90=aging_61_90,
-            aging_91_180=aging_91_180,
-            aging_180_plus=aging_180_plus,
+            overdue_rate=overdue_rate,
+            aging_0_30=aging_buckets["0-30"],
+            aging_31_60=aging_buckets["31-60"],
+            aging_61_90=aging_buckets["61-90"],
+            aging_91_180=aging_buckets["91-180"],
+            aging_180_plus=aging_buckets["180+"],
             etl_time=datetime.now(),
         )
 
     def summarize_by_customer(
         self,
         records: list[StdARRecord],
-        stat_date: Optional[datetime] = None,
+        stat_date: datetime | None = None,
     ) -> DMCustomerAR:
         """按客户汇总 AR 数据
 
@@ -175,11 +170,11 @@ class ARService:
         stat_date = stat_date or datetime.now()
 
         total_ar = sum(r.bill_amount_base for r in records)
-        overdue_records = [r for r in records if r.is_overdue]
+        overdue_records = filter_overdue(records)
         overdue_amount = sum(r.unallocated_amount for r in overdue_records)
         overdue_count = len(overdue_records)
         total_count = len(records)
-        overdue_rate = overdue_count / total_count if total_count > 0 else 0.0
+        overdue_rate = calc_overdue_rate(overdue_count, total_count)
 
         last_bill_date = max((r.bill_date for r in records), default=None)
 

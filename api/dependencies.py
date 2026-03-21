@@ -1,4 +1,5 @@
 """依赖注入"""
+from functools import lru_cache
 
 from typing import Annotated
 
@@ -11,28 +12,33 @@ from services.clickhouse_service import ClickHouseDataService
 from services.quality_service import QualityService
 
 
+@lru_cache
 def get_clickhouse_service() -> ClickHouseDataService:
-    """获取 ClickHouse 数据服务实例"""
+    """获取 ClickHouse 数据服务实例（单例，跨请求复用连接）"""
     return ClickHouseDataService()
 
 
+@lru_cache
 def get_quality_service() -> QualityService:
-    """获取质量服务实例"""
+    """获取质量服务实例（单例）"""
     return QualityService()
 
 
+@lru_cache
 def get_rag_service() -> RAGService:
-    """获取 RAG 服务实例"""
+    """获取 RAG 服务实例（单例）"""
     return RAGService()
 
 
+@lru_cache
 def get_nl_query_service() -> NLQueryService:
-    """获取自然语言查询服务实例"""
+    """获取自然语言查询服务实例（单例）"""
     return NLQueryService()
 
 
+@lru_cache
 def get_attribution_service() -> AttributionService:
-    """获取归因分析服务实例"""
+    """获取归因分析服务实例（单例）"""
     return AttributionService()
 
 

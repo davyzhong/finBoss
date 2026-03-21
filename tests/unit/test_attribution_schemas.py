@@ -1,6 +1,7 @@
 """测试归因数据模型"""
 import pytest
-from schemas.attribution import Factor, AttributionResult
+
+from schemas.attribution import AttributionResult, Factor
 
 
 def test_factor_model():
@@ -43,6 +44,7 @@ def test_factor_dimension_literal_rejects_product():
 
 def test_knowledge_doc_model():
     from datetime import datetime
+
     from schemas.attribution import KnowledgeDoc
 
     now = datetime.now()
@@ -64,6 +66,7 @@ def test_knowledge_doc_model():
 
 def test_knowledge_doc_defaults():
     from datetime import datetime
+
     from schemas.attribution import KnowledgeDoc
 
     now = datetime.now()
@@ -82,6 +85,7 @@ def test_knowledge_doc_defaults():
 
 def test_knowledge_list_result_model():
     from datetime import datetime
+
     from schemas.attribution import KnowledgeDoc, KnowledgeListResult
 
     now = datetime.now()

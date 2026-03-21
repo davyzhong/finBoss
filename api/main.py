@@ -30,15 +30,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS 配置：仅允许内部服务调用，不开放跨域
+    # CORS 配置：通过 APP_CORS_ORIGINS 环境变量配置，支持逗号分隔多个源
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost",
-            "http://localhost:8000",
-            "http://127.0.0.1",
-            "http://127.0.0.1:8000",
-        ],
+        allow_origins=settings.app.cors_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["*"],

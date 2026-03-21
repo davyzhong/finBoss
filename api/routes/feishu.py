@@ -1,7 +1,8 @@
 """飞书 Webhook 端点"""
 import json
 import logging
-from fastapi import APIRouter, Request, HTTPException
+
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from services.feishu.event_handler import EventHandler

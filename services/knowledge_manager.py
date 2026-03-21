@@ -18,6 +18,16 @@ PRODUCTION_ALIAS = "finboss_knowledge"
 STAGING_NAME = "finboss_knowledge_v2"
 
 
+def _escape_milvus_str(value: str) -> str:
+    """Escape special characters in a string value for Milvus expression safety.
+
+    Milvus expressions use double quotes for string literals. An attacker could
+    inject arbitrary expression syntax via e.g.  category = 'foo" || id == "bar'.
+    This function escapes double quotes and backslashes before interpolation.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 class KnowledgeManager:
     """知识库版本管理服务"""
 
@@ -150,7 +160,8 @@ class KnowledgeManager:
 
         expr = "is_active == true"
         if category:
-            expr = f'{expr} AND category == "{category}"'
+            escaped = _escape_milvus_str(category)
+            expr = f'{expr} AND category == "{escaped}"'
 
         collection = self._get_collection()
         offset = (page - 1) * page_size
@@ -188,7 +199,7 @@ class KnowledgeManager:
         collection = self._get_collection()
 
         results = collection.query(
-            expr=f'id == "{doc_id}" AND is_active == true',
+            expr=f'id == "{_escape_milvus_str(doc_id)}" AND is_active == true',
             output_fields=[
                 "id",
                 "content",
@@ -263,7 +274,7 @@ class KnowledgeManager:
 
         # 获取当前版本
         current = collection.query(
-            expr=f'id == "{doc_id}" AND is_active == true',
+            expr=f'id == "{_escape_milvus_str(doc_id)}" AND is_active == true',
             output_fields=["id", "content", "category", "metadata", "version", "created_at"],
             limit=1,
         )
@@ -277,7 +288,7 @@ class KnowledgeManager:
 
         # 软删除旧版本
         collection.update(
-            expr=f'id == "{doc_id}" AND is_active == true',
+            expr=f'id == "{_escape_milvus_str(doc_id)}" AND is_active == true',
             data={"is_active": False},
         )
 
@@ -319,7 +330,7 @@ class KnowledgeManager:
         collection = self._get_collection()
         try:
             collection.update(
-                expr=f'id == "{doc_id}" AND is_active == true',
+                expr=f'id == "{_escape_milvus_str(doc_id)}" AND is_active == true',
                 data={"is_active": False, "change_log": change_log or "deleted"},
             )
             collection.flush()
@@ -332,7 +343,7 @@ class KnowledgeManager:
         self.connect()
         collection = self._get_collection()
         results = collection.query(
-            expr=f'id == "{doc_id}"',
+            expr=f'id == "{_escape_milvus_str(doc_id)}"',
             output_fields=[
                 "id",
                 "content",

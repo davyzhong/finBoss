@@ -1,9 +1,9 @@
 """归因分析 API 路由"""
-from pydantic import BaseModel
 from fastapi import APIRouter
+from pydantic import BaseModel
 
-from schemas.attribution import AttributionResult
 from api.dependencies import AttributionServiceDep
+from schemas.attribution import AttributionResult
 
 router = APIRouter()
 

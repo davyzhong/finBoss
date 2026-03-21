@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FinBoss is an enterprise financial AI data platform connecting heterogeneous ERP systems, aggregating data, and providing AI-driven analytics and reporting. Currently in **Phase 2** (AI 能力验证) - Ollama LLM + RAG knowledge base + NL query POC.
+FinBoss is an enterprise financial AI data platform connecting heterogeneous ERP systems, aggregating data, and providing AI-driven analytics and reporting. Currently in **Phase 3** (企业集成与增强) - Feishu bot + attribution analysis + knowledge versioning.
 
 **Tech Stack**: Python 3.11, FastAPI, ClickHouse, Ollama, Milvus, Apache Iceberg, SeaTunnel, Flink, Kafka, MinIO, dbt
 
@@ -164,9 +164,11 @@ return [dict(zip(column_names, row)) for row in data]
 
 ### SQL Security
 
-User-submitted SQL queries are validated against dangerous patterns (DROP, DELETE, INSERT, etc.) in `api/routes/query.py:_validate_sql()`.
+User-submitted SQL queries are validated in two stages (in `services/validators.py:validate_readonly_sql`):
+1. Blacklist quick-reject for obviously dangerous patterns (DROP, DELETE, INSERT, etc.)
+2. sqlglot AST parsing: verifies the top-level statement is SELECT/UNION and recursively checks all subqueries/CTEs for forbidden operations.
 
-Only SELECT queries are allowed.
+Only SELECT-family queries are allowed.
 
 ## Testing Conventions
 
@@ -174,6 +176,15 @@ Only SELECT queries are allowed.
 - `tests/unit/` - Unit tests for services and utilities
 - `tests/integration/` - Integration tests for API endpoints and database
 - `tests/conftest.py` - Shared pytest fixtures
+
+### Key Test Files
+- `tests/unit/test_validators.py` - SQL security validation (sqlglot AST whitelist)
+- `tests/unit/test_clickhouse_service.py` - ClickHouse query service + limit/table-name validation
+- `tests/unit/test_feishu_client.py` - Feishu client signature verification and token caching
+- `tests/unit/test_ollama_service.py` - Ollama LLM service (uses `http_client` dependency injection for mockability)
+
+### Service Cache Isolation
+All `@lru_cache` service factories are cleared between tests via `conftest.py`'s `autouse` fixture. Never share service instances across tests.
 
 ### Test Data
 

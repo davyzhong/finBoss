@@ -1,5 +1,4 @@
 """Test card builder for Feishu Interactive Cards."""
-import pytest
 from services.feishu.card_builder import CardBuilder
 
 

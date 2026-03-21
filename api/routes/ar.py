@@ -1,7 +1,6 @@
 """AR 应收路由"""
 import logging
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -21,8 +20,8 @@ router = APIRouter()
 @router.get("/summary", response_model=list[ARSummaryResponse])
 async def get_ar_summary(
     clickhouse_service: ClickHouseServiceDep,
-    company_code: Optional[str] = Query(default=None, description="公司编码"),
-    stat_date: Optional[str] = Query(default=None, description="统计日期 YYYY-MM-DD"),
+    company_code: str | None = Query(default=None, description="公司编码"),
+    stat_date: str | None = Query(default=None, description="统计日期 YYYY-MM-DD"),
 ):
     """获取 AR 汇总数据
 
@@ -40,7 +39,7 @@ async def get_ar_summary(
             stat_date=stat_date,
         )
         return results
-    except Exception as e:
+    except Exception:
         logger.exception("get_ar_summary failed")
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -48,8 +47,8 @@ async def get_ar_summary(
 @router.get("/customer", response_model=list[CustomerARResponse])
 async def get_customer_ar(
     clickhouse_service: ClickHouseServiceDep,
-    customer_code: Optional[str] = Query(default=None, description="客户编码"),
-    is_overdue: Optional[bool] = Query(default=None, description="是否逾期"),
+    customer_code: str | None = Query(default=None, description="客户编码"),
+    is_overdue: bool | None = Query(default=None, description="是否逾期"),
     limit: int = Query(default=100, ge=1, le=1000, description="返回条数"),
 ):
     """获取客户 AR 汇总
@@ -70,7 +69,7 @@ async def get_customer_ar(
             limit=limit,
         )
         return results
-    except Exception as e:
+    except Exception:
         logger.exception("get_customer_ar failed")
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -78,10 +77,10 @@ async def get_customer_ar(
 @router.get("/detail", response_model=list[ARDetailResponse])
 async def get_ar_detail(
     clickhouse_service: ClickHouseServiceDep,
-    bill_no: Optional[str] = Query(default=None, description="应收单号"),
-    customer_code: Optional[str] = Query(default=None, description="客户编码"),
-    company_code: Optional[str] = Query(default=None, description="公司编码"),
-    is_overdue: Optional[bool] = Query(default=None, description="是否逾期"),
+    bill_no: str | None = Query(default=None, description="应收单号"),
+    customer_code: str | None = Query(default=None, description="客户编码"),
+    company_code: str | None = Query(default=None, description="公司编码"),
+    is_overdue: bool | None = Query(default=None, description="是否逾期"),
     limit: int = Query(default=100, ge=1, le=1000, description="返回条数"),
 ):
     """获取 AR 应收明细
@@ -106,7 +105,7 @@ async def get_ar_detail(
             limit=limit,
         )
         return results
-    except Exception as e:
+    except Exception:
         logger.exception("get_ar_detail failed")
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -149,14 +148,13 @@ async def check_ar_quality(
             table_name=request.table_name,
             check_time=datetime.now(),
             latest_update=latest_update,
-            passed=result["passed"],
             total_rules=result["total_rules"],
-            passed_rules=result["passed_rules"],
-            failed_rules=result["failed_rules"],
+            passed_count=result["passed"],
+            failed_count=result["failed_rules"] + result.get("warnings", 0),
             details=result["details"],
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("check_ar_quality failed")
         raise HTTPException(status_code=500, detail="Internal server error")

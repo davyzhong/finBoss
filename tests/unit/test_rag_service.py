@@ -1,8 +1,6 @@
 """RAGService 单元测试"""
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestRAGServiceInit:
     """__init__() 测试"""

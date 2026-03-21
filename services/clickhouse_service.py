@@ -1,8 +1,32 @@
 """ClickHouse 数据查询服务"""
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from clickhouse_driver import Client
+
+_ALLOWED_TABLE_PREFIXES = ("raw.", "std.", "dm.")
+_LIMIT_MAX = 10000
+
+
+def _validate_limit(value: int | None) -> int:
+    """Validate limit as a positive integer within allowed range."""
+    if value is None:
+        return 100
+    if not isinstance(value, int) or value <= 0 or value > _LIMIT_MAX:
+        raise ValueError(f"limit must be a positive integer <= {_LIMIT_MAX}")
+    return value
+
+
+def _validate_table_name(name: str) -> str:
+    """Validate table_name against an allowlist of known prefixes."""
+    if not isinstance(name, str):
+        raise ValueError("table_name must be a string")
+    lower = name.lower()
+    if not any(lower.startswith(prefix.lower()) for prefix in _ALLOWED_TABLE_PREFIXES):
+        raise ValueError(
+            f"table_name must start with one of: {', '.join(_ALLOWED_TABLE_PREFIXES)}"
+        )
+    return name
 
 from api.config import get_settings
 
@@ -10,7 +34,7 @@ from api.config import get_settings
 class ClickHouseDataService:
     """ClickHouse 数据查询服务"""
 
-    def __init__(self, client: Optional[Client] = None):
+    def __init__(self, client: Client | None = None):
         settings = get_settings()
         if client is None:
             self.client = Client(
@@ -26,7 +50,7 @@ class ClickHouseDataService:
     def execute_query(
         self,
         sql: str,
-        params: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """执行查询并返回字典列表
 
@@ -64,8 +88,8 @@ class ClickHouseDataService:
 
     def get_ar_summary(
         self,
-        company_code: Optional[str] = None,
-        stat_date: Optional[str] = None,
+        company_code: str | None = None,
+        stat_date: str | None = None,
     ) -> list[dict[str, Any]]:
         """获取 AR 汇总数据
 
@@ -110,8 +134,8 @@ class ClickHouseDataService:
 
     def get_customer_ar(
         self,
-        customer_code: Optional[str] = None,
-        is_overdue: Optional[bool] = None,
+        customer_code: str | None = None,
+        is_overdue: bool | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """获取客户 AR 明细
@@ -146,8 +170,8 @@ class ClickHouseDataService:
             params["customer_code"] = customer_code
         if is_overdue is not None:
             sql += " AND overdue_count > 0" if is_overdue else " AND overdue_count = 0"
-        # ClickHouse 直接拼接 limit
-        sql += f" ORDER BY overdue_amount DESC LIMIT {int(limit)}"
+        validated_limit = _validate_limit(limit)
+        sql += f" ORDER BY overdue_amount DESC LIMIT {validated_limit}"
         return self.execute_query(sql, params)
 
     def get_latest_etl_time(self, table_name: str) -> datetime:
@@ -159,7 +183,8 @@ class ClickHouseDataService:
         Returns:
             最新 ETL 时间
         """
-        sql = f"SELECT MAX(etl_time) as latest_etl_time FROM {table_name}"
+        validated_table = _validate_table_name(table_name)
+        sql = f"SELECT MAX(etl_time) as latest_etl_time FROM {validated_table}"
         result = self.execute_query(sql)
         if not result:
             return datetime.now()
@@ -170,10 +195,10 @@ class ClickHouseDataService:
 
     def get_ar_detail(
         self,
-        bill_no: Optional[str] = None,
-        customer_code: Optional[str] = None,
-        company_code: Optional[str] = None,
-        is_overdue: Optional[bool] = None,
+        bill_no: str | None = None,
+        customer_code: str | None = None,
+        company_code: str | None = None,
+        is_overdue: bool | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """获取 AR 应收明细
@@ -225,6 +250,6 @@ class ClickHouseDataService:
         if is_overdue is not None:
             sql += " AND is_overdue = %(is_overdue)s"
             params["is_overdue"] = is_overdue
-        # ClickHouse 直接拼接 limit
-        sql += f" ORDER BY bill_date DESC LIMIT {int(limit)}"
+        validated_limit = _validate_limit(limit)
+        sql += f" ORDER BY bill_date DESC LIMIT {validated_limit}"
         return self.execute_query(sql, params)

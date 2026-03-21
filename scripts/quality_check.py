@@ -62,7 +62,7 @@ def main():
         print(f"警告: {summary['warnings']}")
         print(f"通过率: {summary['pass_rate']:.2%}")
         print(f"总体状态: {'✓ 通过' if summary['overall_pass'] else '✗ 未通过'}")
-        print(f"\n详细结果:")
+        print("\n详细结果:")
         for r in summary["results"]:
             status = "✓" if r["passed"] else "✗"
             print(f"  [{status}] {r['rule_name']}: {r['message']}")

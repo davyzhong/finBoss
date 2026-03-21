@@ -1,6 +1,5 @@
 """AR 相关 API Schema"""
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -39,7 +38,7 @@ class CustomerARResponse(BaseModel):
     overdue_count: int
     total_count: int
     overdue_rate: float
-    last_bill_date: Optional[datetime]
+    last_bill_date: datetime | None
     etl_time: datetime
 
 
@@ -54,7 +53,7 @@ class ARDetailResponse(BaseModel):
     customer_name: str
     bill_no: str
     bill_date: datetime
-    due_date: Optional[datetime]
+    due_date: datetime | None
     bill_amount: float
     received_amount: float
     allocated_amount: float
@@ -81,8 +80,7 @@ class QualityCheckResponse(BaseModel):
     table_name: str
     check_time: datetime
     latest_update: datetime | None
-    passed: int
     total_rules: int
-    passed_rules: int
-    failed_rules: int
+    passed_count: int = Field(description="通过规则数量")
+    failed_count: int = Field(description="失败规则数量（包含警告）")
     details: list[dict]

@@ -1,13 +1,19 @@
 # tests/conftest.py
 """pytest 配置和 fixtures"""
 from datetime import datetime, timedelta
-from typing import Generator
 
 import pytest
 from factory.random import reseed_random
 
 from api.config import Settings, get_settings
-from schemas.dm.ar import DMCustomerAR, DMARSummary
+from api.dependencies import (
+    get_attribution_service,
+    get_clickhouse_service,
+    get_nl_query_service,
+    get_quality_service,
+    get_rag_service,
+)
+from schemas.dm.ar import DMARSummary
 from schemas.std.ar import StdARRecord
 
 
@@ -15,6 +21,28 @@ from schemas.std.ar import StdARRecord
 def setup_test_env():
     """设置测试环境"""
     reseed_random(42)
+
+
+@pytest.fixture(autouse=True)
+def clear_service_caches():
+    """每个测试前清除所有服务缓存，确保测试隔离"""
+    for fn in (
+        get_clickhouse_service,
+        get_quality_service,
+        get_rag_service,
+        get_nl_query_service,
+        get_attribution_service,
+    ):
+        fn.cache_clear()
+    yield
+    for fn in (
+        get_clickhouse_service,
+        get_quality_service,
+        get_rag_service,
+        get_nl_query_service,
+        get_attribution_service,
+    ):
+        fn.cache_clear()
 
 
 @pytest.fixture

@@ -10,7 +10,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import httpx
 
-
 BASE_URL = "http://localhost:8000"
 
 
@@ -77,12 +76,12 @@ def test_nl_query(question: str, expected_keywords: list[str]) -> bool:
 
         # 检查 SQL 是否合理
         if not sql.upper().startswith("SELECT"):
-            print(f"   ⚠️ 警告: SQL 不是 SELECT 语句")
+            print("   ⚠️ 警告: SQL 不是 SELECT 语句")
             return False
 
         return True
     except httpx.TimeoutException:
-        print(f"   ❌ 请求超时（60秒）")
+        print("   ❌ 请求超时（60秒）")
         return False
     except Exception as e:
         print(f"   ❌ 错误: {e}")

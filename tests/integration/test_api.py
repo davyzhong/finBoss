@@ -103,7 +103,7 @@ class TestAREndpoints:
         r = mock_client.post("/api/v1/ar/quality-check", json={"table_name": "std_ar", "max_delay_minutes": 10})
         assert r.status_code == 200
         data = r.json()
-        assert "passed" in data
+        assert "passed_count" in data
         assert "total_rules" in data
 
 

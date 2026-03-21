@@ -1,7 +1,5 @@
 """NLQueryService 单元测试"""
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 
 class TestNLQueryServiceValidateSql:
@@ -48,7 +46,7 @@ class TestNLQueryServiceValidateSql:
             assert service._validate_sql(sql) is False, f"Should reject: {sql}"
 
     def test_substring_false_positive(self):
-        """测试子字符串不误判"""
+        """测试 sqlglot AST 解析不产生误判（相对于旧版黑名单）"""
         from services.ai.nl_query_service import NLQueryService
 
         service = NLQueryService(
@@ -56,12 +54,12 @@ class TestNLQueryServiceValidateSql:
             rag_service=MagicMock(),
             clickhouse_service=MagicMock(),
         )
-        # SELECTED（SELECT的一个变体）不包含完整 SELECT 关键字作为子串
-        assert service._validate_sql("SELECT SELECTED * FROM test") is True
-        # SELECT DELETED — DELETED 不是 DELETE（DELETE后面没有边界接续）
+        # SELECT DELETED — DELETED 不是 DELETE（解析为列名，有效 SELECT）
         assert service._validate_sql("SELECT DELETED FROM test") is True
-        # SELECT CALLER — CALLER 不是 CALL
+        # SELECT CALLER — CALLER 不是 CALL（解析为列名，有效 SELECT）
         assert service._validate_sql("SELECT CALLER FROM test") is True
+        # SELECT SELECTED — SELECTED 是保留关键字，sqlglot 解析失败（返回 False，比旧版更安全）
+        assert service._validate_sql("SELECT SELECTED * FROM test") is False
 
 
 class TestNLQueryServiceExtractSql:

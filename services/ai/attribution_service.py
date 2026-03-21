@@ -1,8 +1,8 @@
 """归因分析服务"""
-import logging
-import time
 import json
+import logging
 import re
+import time
 from typing import Any
 
 from schemas.attribution import AttributionResult, Factor
@@ -45,6 +45,7 @@ def calc_confidence(sql_result: list[dict], dimension: str) -> float:
 
 
 # SQL 模板（用于归因验证）
+# 使用 ClickHouse param() 语法避免字符串拼接注入
 SQL_TEMPLATES = {
     "customer": """
 SELECT
@@ -60,8 +61,8 @@ FROM dm.dm_customer_ar curr
 LEFT JOIN dm.dm_customer_ar prev
     ON curr.customer_code = prev.customer_code
     AND curr.company_code = prev.company_code
-    AND prev.stat_date = toDate('{prev_date}')
-WHERE curr.stat_date = toDate('{current_date}')
+    AND prev.stat_date = toDate({prev_date})
+WHERE curr.stat_date = toDate({current_date})
 ORDER BY overdue_delta DESC
 LIMIT 10
 """,
@@ -74,8 +75,8 @@ SELECT
     lagInFrame(overdue_rate) OVER (ORDER BY stat_date) AS prev_overdue_rate,
     overdue_rate - lagInFrame(overdue_rate) OVER (ORDER BY stat_date) AS rate_delta
 FROM dm.dm_ar_summary
-WHERE stat_date BETWEEN '{start_date}' AND '{end_date}'
-  AND company_code = '{company_code}'
+WHERE stat_date BETWEEN {start_date} AND {end_date}
+  AND company_code = {company_code}
 ORDER BY stat_date
 """,
 }
@@ -168,23 +169,23 @@ class AttributionService:
                 current_date = "2023-10-31"
                 prev_date = "2023-09-30"
 
-            filled_sql = sql.format(
-                current_date=current_date,
-                prev_date=prev_date,
-                start_date=prev_date,
-                end_date=current_date,
-                company_code="C001",
-            )
+            sql_params = {
+                "current_date": current_date,
+                "prev_date": prev_date,
+                "start_date": prev_date,
+                "end_date": current_date,
+                "company_code": "C001",
+            }
 
             try:
-                sql_result = self.clickhouse.execute_query(filled_sql)
+                sql_result = self.clickhouse.execute_query(sql, sql_params)
                 raw_data[dimension] = {
-                    "sql": filled_sql,
+                    "sql": sql,  # Don't leak interpolated SQL; template is safe to show
                     "result": sql_result,
                     "confidence": calc_confidence(sql_result, dimension),
                 }
             except Exception as e:
-                raw_data[dimension] = {"error": str(e), "sql": filled_sql}
+                raw_data[dimension] = {"error": str(e), "sql": sql}
 
         # Step 3: 生成归因因子
         factors: list[Factor] = []
