@@ -15,6 +15,7 @@ from api.routes import (
     customer360,
     feishu,
     knowledge,
+    quality,
     query,
     reports,
     salesperson_mapping,
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(reports.router, prefix="/api/v1/reports", tags=["报告管理"])
     app.include_router(salesperson_mapping.router, prefix="/api/v1/salesperson", tags=["业务员映射"])
     app.include_router(ap.router, prefix="/api/v1/ap", tags=["AP管理"])
+    app.include_router(quality.router, prefix="/api/v1/quality", tags=["数据质量"])
 
     # 挂载静态文件目录用于报告页面（隔离到 /static/reports 避免与根 /static 冲突）
     from pathlib import Path

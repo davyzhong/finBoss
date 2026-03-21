@@ -1,0 +1,76 @@
+"""数据质量 API 路由"""
+from datetime import date
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, HTTPException, Query
+
+from api.dependencies import FieldQualityServiceDep
+from api.schemas.quality import AnomalyUpdateRequest, CheckResponse, QualitySummaryResponse
+
+router = APIRouter(tags=["quality"])
+
+
+@router.get("/summary", response_model=QualitySummaryResponse)
+async def get_quality_summary(service: FieldQualityServiceDep):
+    """全局健康度概览"""
+    return service.get_summary()
+
+
+@router.get("/reports")
+async def list_reports(
+    service: FieldQualityServiceDep,
+    stat_date: date | None = Query(default=None),
+    limit: int = Query(default=50, le=500),
+):
+    """质量报告列表"""
+    stat_date = stat_date or date.today()
+    rows = service.list_reports(stat_date, limit)
+    return {"items": rows, "total": len(rows)}
+
+
+@router.get("/reports/{report_id}")
+async def get_report(report_id: str, service: FieldQualityServiceDep):
+    """报告详情（含异常明细）"""
+    report = service.get_report(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    anomalies = service.list_anomalies_by_report(report_id)
+    return {"report": report, "anomalies": anomalies}
+
+
+@router.get("/anomalies")
+async def list_anomalies(
+    service: FieldQualityServiceDep,
+    status: Literal["open", "resolved", "ignored"] | None = Query(default=None),
+    limit: int = Query(default=100, le=1000),
+):
+    """当前异常列表（默认返回 open 异常）"""
+    rows = service.list_anomalies(status, limit)
+    return {"items": rows, "total": len(rows)}
+
+
+@router.put("/anomalies/{anomaly_id}")
+async def update_anomaly(
+    anomaly_id: str,
+    body: AnomalyUpdateRequest,
+    service: FieldQualityServiceDep,
+):
+    """标记异常为已处理/忽略"""
+    service.update_anomaly(anomaly_id, body.status)
+    return {"status": "updated", "id": anomaly_id, "new_status": body.status}
+
+
+@router.post("/check", response_model=CheckResponse)
+async def trigger_check(service: FieldQualityServiceDep):
+    """手动触发一次质量检查"""
+    import time
+    start = time.monotonic()
+    result = service.check_all()
+    service.send_feishu_card()
+    duration_ms = int((time.monotonic() - start) * 1000)
+    return CheckResponse(
+        status="ok",
+        report_count=result["total_tables"],
+        anomaly_count=result["anomaly_count"],
+        duration_ms=duration_ms,
+    )
