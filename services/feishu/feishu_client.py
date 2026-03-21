@@ -91,3 +91,46 @@ class FeishuClient:
         string_to_sign = f"{timestamp}{raw_body.decode()}"
         sign = hmac.new(secret.encode(), string_to_sign.encode(), hashlib.sha256).hexdigest()
         return sign == signature
+
+    def send_merge_notification(self, queue_items: list) -> bool:
+        """发送合并复核通知卡片
+
+        Args:
+            queue_items: 待复核的合并队列项列表（CustomerMergeQueue）
+        Returns:
+            是否发送成功
+        """
+        config = get_feishu_config()
+        if not queue_items:
+            return True  # Nothing to send
+
+        if not config.ops_channel_id:
+            import logging
+            logging.getLogger(__name__).warning(
+                "FEISHU_OPS_CHANNEL_ID 未配置，跳过飞书通知"
+            )
+            return False
+
+        from services.feishu.card_builder import build_merge_card
+
+        success = True
+        for item in queue_items:
+            if not hasattr(item, 'match_result') or not item.match_result:
+                continue
+            card = build_merge_card(item.match_result, queue_id=item.id)
+            if not self.send_card_to_channel(card, channel_id=config.ops_channel_id):
+                success = False
+        return success
+
+    def send_card_to_channel(self, card: dict, channel_id: str) -> bool:
+        """发送卡片到指定渠道（群机器人或用户）"""
+        if channel_id.startswith("https://"):
+            return self._send_via_webhook(channel_id, card)
+        return self.send_card(receive_id=channel_id, card_content=card)
+
+    def _send_via_webhook(self, webhook_url: str, card: dict) -> bool:
+        """通过 webhook 发送卡片"""
+        card_json = {"config": {"wide_screen_mode": True}, "elements": card.get("elements", [])}
+        with httpx.Client(timeout=10) as client:
+            resp = client.post(webhook_url, json={"msg_type": "interactive", "content": card_json})
+        return resp.status_code == 200

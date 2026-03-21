@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import get_settings
-from api.routes import ai, ar, attribution, feishu, knowledge, query
+from api.routes import ai, ar, attribution, customer360, feishu, knowledge, query
 
 
 @asynccontextmanager
@@ -13,7 +13,14 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     settings = get_settings()
     print(f"Starting {settings.app.app_name} v{settings.app.app_version}")
+
+    from services.scheduler_service import start_scheduler, stop_scheduler
+
+    start_scheduler()
+
     yield
+
+    stop_scheduler()
     print("Shutting down FinBoss")
 
 
@@ -46,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(attribution.router, prefix="/api/v1/attribution", tags=["归因分析"])
     app.include_router(knowledge.router, prefix="/api/v1/ai/knowledge", tags=["知识库"])
     app.include_router(feishu.router, prefix="/api/v1/feishu", tags=["飞书机器人"])
+    app.include_router(customer360.router, prefix="/api/v1", tags=["客户360"])
 
     @app.get("/health")
     async def health_check():
