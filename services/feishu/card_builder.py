@@ -168,3 +168,48 @@ class CardBuilder:
                 {"tag": "markdown", "content": "请稍后重试，或联系管理员。"},
             ],
         }
+
+
+def build_merge_card(match_result, queue_id: str | None = None) -> dict:
+    """构建合并复核卡片
+
+    Args:
+        match_result: MatchResult 对象
+        queue_id: 队列项 ID（来自 CustomerMergeQueue.id）
+    """
+    customers = match_result.customers
+    card_id = queue_id or (customers[0].customer_id if customers else "unknown")
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": "🔔 客户合并待确认"},
+            "template": "orange",
+        },
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": (
+                    f"**发现 {len(customers)} 个疑似同一客户：**\n\n"
+                    + "\n".join(f"- `{c.customer_id}` {c.customer_name}" for c in customers)
+                    + f"\n\n**相似度**：{match_result.similarity:.0%}\n**原因**：{match_result.reason}"
+                ),
+            },
+            {"tag": "hr"},
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "✅ 合并"},
+                        "type": "primary",
+                        "value": f'{{"action": "merge", "queue_id": "{card_id}"}}',
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "❌ 忽略"},
+                        "type": "danger",
+                        "value": f'{{"action": "reject", "queue_id": "{card_id}"}}',
+                    },
+                ],
+            },
+        ],
+    }
