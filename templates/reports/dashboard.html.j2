@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AR 管理看板 - {{ stat_date }}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #333; padding: 20px; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .header h1 { font-size: 24px; font-weight: 600; }
+  .header .date { color: #888; font-size: 14px; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .kpi-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .kpi-card .label { font-size: 13px; color: #888; margin-bottom: 8px; }
+  .kpi-card .value { font-size: 28px; font-weight: 700; color: #1a1a1a; }
+  .kpi-card .value.danger { color: #e53e3e; }
+  .kpi-card .value.warning { color: #d69e2e; }
+  .kpi-card .value.success { color: #38a169; }
+  .section { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .section h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #1a1a1a; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+  th { color: #888; font-weight: 500; font-size: 12px; text-transform: uppercase; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+  .tag.high { background: #fed7d7; color: #c53030; }
+  .tag.medium { background: #fefcbf; color: #975a16; }
+  .tag.low { background: #c6f6d5; color: #276749; }
+  .bar-chart { display: flex; flex-direction: column; gap: 8px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; }
+  .bar-label { width: 120px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { flex: 1; height: 20px; background: #f0f0f0; border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; background: #3182ce; border-radius: 4px; transition: width 0.3s; }
+  .bar-pct { width: 40px; text-align: right; font-size: 12px; color: #666; }
+  .pie-chart { display: flex; align-items: center; gap: 24px; }
+  .pie-legend { display: flex; flex-direction: column; gap: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .trend-chart { display: flex; flex-direction: column; gap: 4px; }
+  .trend-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .trend-date { width: 80px; color: #888; }
+  .trend-track { flex: 1; height: 12px; background: #f0f0f0; border-radius: 2px; }
+  .trend-fill { height: 100%; background: #e53e3e; border-radius: 2px; }
+  .trend-rate { width: 50px; text-align: right; }
+  .risk-table .name { font-weight: 500; }
+  .risk-table .amount { color: #666; }
+  .risk-table .overdue { font-weight: 600; }
+  .risk-table .overdue.high { color: #e53e3e; }
+  .risk-table .overdue.medium { color: #d69e2e; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>AR 管理看板</h1>
+  <span class="date">数据日期: {{ stat_date }}</span>
+</div>
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="label">AR 总额</div>
+    <div class="value">¥{{ "%.0f"|format(kpi.ar_total) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">逾期总额</div>
+    <div class="value danger">¥{{ "%.0f"|format(kpi.ar_overdue) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">逾期率</div>
+    <div class="value {% if kpi.overdue_rate > 0.1 %}danger{% elif kpi.overdue_rate > 0.05 %}warning{% else %}success{% endif %}">
+      {{ "%.1f"|format(kpi.overdue_rate * 100) }}%
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">客户数</div>
+    <div class="value">{{ kpi.customer_count }}</div>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="two-col">
+  <!-- Concentration -->
+  <div class="section">
+    <h2>集中度 Top 10</h2>
+    <div class="bar-chart">
+      {% for c in concentration %}
+      <div class="bar-row">
+        <div class="bar-label" title="{{ c.name }}">{{ c.name }}</div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: {{ (c.pct * 100)|round(1) }}%"></div>
+        </div>
+        <div class="bar-pct">{{ "%.1f"|format(c.pct * 100) }}%</div>
+      </div>
+      {% endfor %}
+      {% if not concentration %}
+      <div style="color:#888;text-align:center;padding:20px;">暂无数据</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Distribution -->
+  <div class="section">
+    <h2>逾期分布</h2>
+    <div class="pie-chart">
+      <svg viewBox="0 0 100 100" style="width:120px;height:120px;">
+        {% set colors = ['#38a169', '#f6e05e', '#ed8936', '#e53e3e'] %}
+        {% set total = distribution|sum(attribute='count') %}
+        {% if total > 0 %}
+          {% set ns = namespace(start=0) %}
+          {% for bucket in distribution %}
+            {% set pct = (bucket.count / total * 100)|round(1) if bucket.count > 0 else 0 %}
+            {% if pct > 0 %}
+              <circle cx="50" cy="50" r="40" fill="none" stroke="{{ colors[loop.index0] }}"
+                stroke-dasharray="{{ (pct * 2.51327)|round(2) }} {{ (251.327 - pct * 2.51327)|round(2) }}"
+                stroke-dashoffset="{{ (-ns.start * 2.51327)|round(2) }}"
+                stroke-width="20" transform="rotate(-90 50 50)"/>
+              {% set ns.start = ns.start + pct %}
+            {% endif %}
+          {% endfor %}
+        {% else %}
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#e0e0e0" stroke-dasharray="251.33 251.33" stroke-width="20"/>
+        {% endif %}
+      </svg>
+      <div class="pie-legend">
+        {% set pie_colors = ['#38a169', '#f6e05e', '#ed8936', '#e53e3e'] %}
+        {% for bucket in distribution %}
+        <div class="legend-item">
+          <div class="legend-dot" style="background:{{ pie_colors[loop.index0] }}"></div>
+          <span>{{ bucket.bucket }} ({{ bucket.count }}户, {{ "%.1f"|format(bucket.pct * 100) }}%)</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Trend -->
+<div class="section">
+  <h2>近12周逾期率趋势</h2>
+  <div class="trend-chart">
+    {% for t in trend %}
+    <div class="trend-bar">
+      <div class="trend-date">{{ t.date }}</div>
+      <div class="trend-track">
+        <div class="trend-fill" style="width: {{ (t.rate * 100 * 5)|round(1) if t.rate else 0 }}%"></div>
+      </div>
+      <div class="trend-rate">{{ "%.2f"|format((t.rate or 0) * 100) }}%</div>
+    </div>
+    {% endfor %}
+    {% if not trend %}
+    <div style="color:#888;text-align:center;padding:20px;">暂无趋势数据</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Risk Customers -->
+<div class="section">
+  <h2>风险客户列表（逾期率 > 30%）</h2>
+  <table class="risk-table">
+    <thead>
+      <tr>
+        <th>客户</th><th>AR总额</th><th>逾期金额</th><th>逾期率</th><th>风险等级</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in risk_customers %}
+    <tr>
+      <td class="name">{{ c.name }}</td>
+      <td class="amount">¥{{ "%.0f"|format(c.ar_total) }}</td>
+      <td class="overdue {% if c.overdue_rate > 0.5 %}high{% else %}medium{% endif %}">¥{{ "%.0f"|format(c.ar_overdue) }}</td>
+      <td class="overdue {% if c.overdue_rate > 0.5 %}high{% else %}medium{% endif %}">{{ "%.1f"|format(c.overdue_rate * 100) }}%</td>
+      <td><span class="tag {% if c.risk_level == '高' %}high{% elif c.risk_level == '中' %}medium{% else %}low{% endif %}">{{ c.risk_level }}</span></td>
+    </tr>
+    {% endfor %}
+    {% if not risk_customers %}
+    <tr><td colspan="5" style="color:#888;text-align:center;padding:20px;">暂无高风险客户</td></tr>
+    {% endif %}
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>
