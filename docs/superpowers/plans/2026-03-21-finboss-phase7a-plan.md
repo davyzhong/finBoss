@@ -612,11 +612,21 @@ class FieldQualityService:
 
     def update_anomaly(self, anomaly_id: str, status: str) -> None:
         now_str = datetime.now().isoformat()
-        resolved_at = f"'{now_str}'" if status in ("resolved", "ignored") else "toDateTime('1970-01-01 00:00:00')"
+        # Per spec: resolved_at only set when status=resolved; ignored leaves it unchanged
+        resolved_at = f"'{now_str}'" if status == "resolved" else "toDateTime('1970-01-01 00:00:00')"
         self._ch.execute(
             f"ALTER TABLE dm.quality_anomalies "
             f"UPDATE status = '{status}', resolved_at = {resolved_at} "
             f"WHERE id = '{anomaly_id}'"
+        )
+
+    def list_anomalies(self, status: str | None, limit: int = 100) -> list[dict]:
+        """List anomalies filtered by status (None = all statuses)."""
+        where = f"status = '{status}'" if status else "1=1"
+        return self._ch.execute_query(
+            f"SELECT * FROM dm.quality_anomalies "
+            f"WHERE {where} "
+            f"ORDER BY severity DESC, detected_at DESC LIMIT {limit}"
         )
 
     # ------------------------------------------------------------------
@@ -918,14 +928,7 @@ async def list_anomalies(
     limit: int = Query(default=100, le=1000),
 ):
     """当前异常列表（默认返回 open 异常）"""
-    if status:
-        rows = service._ch.execute_query(
-            f"SELECT * FROM dm.quality_anomalies "
-            f"WHERE status = '{status}' "
-            f"ORDER BY severity DESC, detected_at DESC LIMIT {limit}"
-        )
-    else:
-        rows = service.list_open_anomalies(limit=limit)
+    rows = service.list_anomalies(status, limit)
     return {"items": rows, "total": len(rows)}
 
 
