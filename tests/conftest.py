@@ -7,6 +7,7 @@ from factory.random import reseed_random
 
 from api.config import Settings, get_settings
 from api.dependencies import (
+    get_alert_service,
     get_attribution_service,
     get_clickhouse_service,
     get_nl_query_service,
@@ -32,6 +33,7 @@ def clear_service_caches():
         get_rag_service,
         get_nl_query_service,
         get_attribution_service,
+        get_alert_service,
     ):
         fn.cache_clear()
     yield
@@ -41,6 +43,7 @@ def clear_service_caches():
         get_rag_service,
         get_nl_query_service,
         get_attribution_service,
+        get_alert_service,
     ):
         fn.cache_clear()
 

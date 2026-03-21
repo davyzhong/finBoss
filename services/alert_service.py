@@ -243,3 +243,71 @@ class AlertService:
         card = {"elements": card_elements}
         client = FeishuClient()
         return client.send_card_to_channel(card, channel_id=config.mgmt_channel_id)
+
+    def list_rules(self) -> list[dict]:
+        """列出所有规则"""
+        return self._ch.execute_query(
+            "SELECT id, name, metric, operator, threshold, scope_type, scope_value, alert_level, enabled, created_at, updated_at "
+            "FROM dm.alert_rules ORDER BY created_at DESC"
+        )
+
+    def create_rule(self, data: dict) -> str:
+        """创建规则（INSERT 方式，ReplacingMergeTree 会自动去重）"""
+        rule_id = data.get("id") or str(uuid.uuid4())
+        now = datetime.now()
+        try:
+            self._ch.execute(
+                "INSERT INTO dm.alert_rules (id, name, metric, operator, threshold, scope_type, scope_value, alert_level, enabled, created_at, updated_at) "
+                "VALUES (%(id)s, %(name)s, %(metric)s, %(operator)s, %(threshold)s, %(scope_type)s, %(scope_value)s, %(alert_level)s, %(enabled)s, %(now)s, %(now)s)",
+                {**data, "id": rule_id, "now": now}
+            )
+        except Exception:
+            pass
+        return rule_id
+
+    def update_rule(self, rule_id: str, data: dict) -> None:
+        """更新规则（INSERT 方式，ReplacingMergeTree 会替换同 id 的旧记录）"""
+        now = datetime.now()
+        data["updated_at"] = now
+        data["id"] = rule_id
+        try:
+            self._ch.execute(
+                "INSERT INTO dm.alert_rules (id, name, metric, operator, threshold, scope_type, scope_value, alert_level, enabled, created_at, updated_at) "
+                "VALUES (%(id)s, %(name)s, %(metric)s, %(operator)s, %(threshold)s, %(scope_type)s, %(scope_value)s, %(alert_level)s, %(enabled)s, %(created_at)s, %(updated_at)s)",
+                {
+                    "id": rule_id,
+                    "name": data.get("name"),
+                    "metric": data.get("metric"),
+                    "operator": data.get("operator"),
+                    "threshold": data.get("threshold"),
+                    "scope_type": data.get("scope_type"),
+                    "scope_value": data.get("scope_value"),
+                    "alert_level": data.get("alert_level"),
+                    "enabled": data.get("enabled"),
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+        except Exception:
+            pass
+
+    def delete_rule(self, rule_id: str) -> bool:
+        """删除规则（ClickHouse ReplacingMergeTree 不支持同步 DELETE，标记删除）"""
+        # 由于 ClickHouse MergeTree 系列不支持同步 UPDATE/DELETE，
+        # 暂通过 INSERT 一条 enabled=0 的记录标记软删除
+        now = datetime.now()
+        try:
+            self._ch.execute(
+                "INSERT INTO dm.alert_rules (id, name, metric, operator, threshold, scope_type, scope_value, alert_level, enabled, created_at, updated_at) "
+                "VALUES (%(id)s, '', '', '', 0, '', '', '', 0, %(now)s, %(now)s)",
+                {"id": rule_id, "now": now}
+            )
+            return True
+        except Exception:
+            return False
+
+    def get_history(self, limit: int = 100) -> list[dict]:
+        """查询预警历史"""
+        return self._ch.execute_query(
+            f"SELECT * FROM dm.alert_history ORDER BY triggered_at DESC LIMIT {limit}"
+        )

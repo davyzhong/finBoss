@@ -8,6 +8,7 @@ from fastapi import Depends
 from api.config import Settings, get_settings
 from services.ai import NLQueryService, RAGService
 from services.ai.attribution_service import AttributionService
+from services.alert_service import AlertService
 from services.clickhouse_service import ClickHouseDataService
 from services.customer360_service import Customer360Service
 from services.quality_service import QualityService
@@ -49,6 +50,12 @@ def get_customer360_service() -> Customer360Service:
     return Customer360Service()
 
 
+@lru_cache
+def get_alert_service() -> AlertService:
+    """获取预警服务实例（单例）"""
+    return AlertService()
+
+
 # 类型别名，方便路由使用
 ClickHouseServiceDep = Annotated[ClickHouseDataService, Depends(get_clickhouse_service)]
 QualityServiceDep = Annotated[QualityService, Depends(get_quality_service)]
@@ -57,3 +64,4 @@ RAGServiceDep = Annotated[RAGService, Depends(get_rag_service)]
 NLQueryServiceDep = Annotated[NLQueryService, Depends(get_nl_query_service)]
 AttributionServiceDep = Annotated[AttributionService, Depends(get_attribution_service)]
 Customer360ServiceDep = Annotated[Customer360Service, Depends(get_customer360_service)]
+AlertServiceDep = Annotated[AlertService, Depends(get_alert_service)]
