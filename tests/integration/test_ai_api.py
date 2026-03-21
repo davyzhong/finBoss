@@ -8,30 +8,6 @@ from api.main import create_app
 
 
 @pytest.fixture
-def mock_ollama_service():
-    with patch("api.routes.ai.OllamaService") as mock:
-        svc = MagicMock()
-        svc.is_available.return_value = True
-        svc.generate.return_value = '```sql\nSELECT * FROM dm.dm_ar_summary\n```'
-        mock.return_value = svc
-        yield svc
-
-
-@pytest.fixture
-def mock_rag_service():
-    with patch("services.ai.RAGService") as mock:
-        svc = MagicMock()
-        svc.is_available.return_value = True
-        svc.search.return_value = [
-            {"id": "kb_001", "content": "逾期金额定义", "category": "indicator", "metadata": {}, "score": 0.5}
-        ]
-        svc.ingest.return_value = "kb_test001"
-        svc.ingest_batch.return_value = ["kb_001", "kb_002"]
-        mock.return_value = svc
-        yield svc
-
-
-@pytest.fixture
 def mock_nl_query_service():
     with patch("api.dependencies.NLQueryService") as mock:
         svc = MagicMock()
@@ -94,7 +70,6 @@ class TestAIDirectRoutes:
 
         from api.routes.ai import nl_query
 
-        # async 函数需要用 sync 子测试套件运行
         import asyncio
 
         async def run():
@@ -129,80 +104,84 @@ class TestAIDirectRoutes:
 
         asyncio.get_event_loop().run_until_complete(run())
 
-    def test_rag_ingest(self, mock_rag_service):
+    def test_rag_ingest(self):
         """测试 RAG 文档添加"""
-        from api.routes.ai import rag_ingest
+        mock_rag = MagicMock()
+        mock_rag.ingest.return_value = "kb_test001"
 
-        import asyncio
+        with patch("services.ai.RAGService", return_value=mock_rag):
+            from api.routes.ai import rag_ingest
 
-        async def run():
-            result = await rag_ingest(
-                content="测试内容",
-                category="test",
-                metadata={"key": "value"},
-                service=mock_rag_service,
-            )
+            import asyncio
 
-            assert result["status"] == "ingested"
-            mock_rag_service.ingest.assert_called_once()
+            async def run():
+                result = await rag_ingest(
+                    content="测试内容",
+                    category="test",
+                    metadata={"key": "value"},
+                )
+                assert result["status"] == "ingested"
+                mock_rag.ingest.assert_called_once()
 
-        asyncio.get_event_loop().run_until_complete(run())
+            asyncio.get_event_loop().run_until_complete(run())
 
-    def test_rag_search(self, mock_rag_service):
+    def test_rag_search(self):
         """测试 RAG 搜索"""
-        from api.routes.ai import rag_search
+        mock_rag = MagicMock()
+        mock_rag.search.return_value = [
+            {"id": "kb_001", "content": "逾期金额定义", "category": "indicator", "metadata": {}, "score": 0.5}
+        ]
 
-        import asyncio
+        with patch("services.ai.RAGService", return_value=mock_rag):
+            from api.routes.ai import rag_search
 
-        async def run():
-            result = await rag_search(
-                query="逾期率",
-                top_k=3,
-                category="indicator",
-                service=mock_rag_service,
-            )
+            import asyncio
 
-            assert result["count"] == 1
-            mock_rag_service.search.assert_called_once_with(
-                query="逾期率",
-                top_k=3,
-                category="indicator",
-            )
+            async def run():
+                result = await rag_search(
+                    query="逾期率",
+                    top_k=3,
+                    category="indicator",
+                )
+                assert result["count"] == 1
+                mock_rag.search.assert_called_once_with(query="逾期率", top_k=3, category="indicator")
 
-        asyncio.get_event_loop().run_until_complete(run())
+            asyncio.get_event_loop().run_until_complete(run())
 
-    def test_rag_search_with_defaults(self, mock_rag_service):
+    def test_rag_search_with_defaults(self):
         """测试 RAG 搜索默认参数"""
-        from api.routes.ai import rag_search
+        mock_rag = MagicMock()
+        mock_rag.search.return_value = []
 
-        import asyncio
+        with patch("services.ai.RAGService", return_value=mock_rag):
+            from api.routes.ai import rag_search
 
-        async def run():
-            await rag_search(query="test", service=mock_rag_service)
+            import asyncio
 
-            mock_rag_service.search.assert_called_once_with(
-                query="test",
-                top_k=5,  # 默认 top_k
-                category=None,
-            )
+            async def run():
+                await rag_search(query="test")
+                mock_rag.search.assert_called_once_with(query="test", top_k=5, category=None)
 
-        asyncio.get_event_loop().run_until_complete(run())
+            asyncio.get_event_loop().run_until_complete(run())
 
-    def test_rag_ingest_batch(self, mock_rag_service):
+    def test_rag_ingest_batch(self):
         """测试批量 RAG 文档添加"""
-        from api.routes.ai import rag_ingest_batch
+        mock_rag = MagicMock()
+        mock_rag.ingest_batch.return_value = ["kb_001", "kb_002"]
 
-        import asyncio
+        with patch("services.ai.RAGService", return_value=mock_rag):
+            from api.routes.ai import rag_ingest_batch
 
-        async def run():
-            documents = [
-                {"content": "文档1", "category": "cat1"},
-                {"content": "文档2", "category": "cat2"},
-            ]
-            result = await rag_ingest_batch(documents=documents, service=mock_rag_service)
+            import asyncio
 
-            assert result["count"] == 2
-            assert result["status"] == "ingested"
-            mock_rag_service.ingest_batch.assert_called_once_with(documents=documents)
+            async def run():
+                documents = [
+                    {"content": "文档1", "category": "cat1"},
+                    {"content": "文档2", "category": "cat2"},
+                ]
+                result = await rag_ingest_batch(documents=documents)
+                assert result["count"] == 2
+                assert result["status"] == "ingested"
+                mock_rag.ingest_batch.assert_called_once_with(documents=documents)
 
-        asyncio.get_event_loop().run_until_complete(run())
+            asyncio.get_event_loop().run_until_complete(run())

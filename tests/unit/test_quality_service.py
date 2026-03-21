@@ -132,7 +132,7 @@ class TestQualityService:
         )
         service.add_result(
             service.check_timeliness(
-                datetime.now() - timedelta(minutes=5), "std_ar", 10
+                "std_ar", datetime.now() - timedelta(minutes=5), 10
             ),
         )
 

@@ -174,7 +174,7 @@ class ARService:
         first_record = records[0]
         stat_date = stat_date or datetime.now()
 
-        total_ar = sum(r.unallocated_amount for r in records)
+        total_ar = sum(r.bill_amount_base for r in records)
         overdue_records = [r for r in records if r.is_overdue]
         overdue_amount = sum(r.unallocated_amount for r in overdue_records)
         overdue_count = len(overdue_records)

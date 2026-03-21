@@ -1,12 +1,15 @@
 """RAG (Retrieval-Augmented Generation) 服务"""
 
 import hashlib
+import logging
 from typing import Any
 
 import httpx
 from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
 
 from api.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class RAGService:
@@ -27,7 +30,6 @@ class RAGService:
         self.embedding_model = embedding_model or settings.milvus.embedding_model
         self.top_k = top_k or settings.milvus.top_k
         self._collection: Collection | None = None
-        self._embedding_url = "http://localhost:8000/api/v1/embed"  # 暂用外部 embedding 服务
 
     def connect(self) -> None:
         """建立 Milvus 连接（使用默认别名）"""
@@ -81,10 +83,8 @@ class RAGService:
         except Exception:
             pass
 
-        # Fallback: 使用简单的 TF-IDF-like 假向量 (仅用于 POC)
-        # 实际生产必须使用真实 embedding 模型
-        import hashlib
-
+        # Fallback: 使用确定性 hash 生成伪向量 (POC only — RAG 质量降级)
+        logger.warning("Ollama embedding API 不可用，使用伪向量替代，RAG 质量降级")
         hash_bytes = hashlib.sha256(text.encode()).digest()
         dim = 768  # nomic-embed-text dimension
         vector = []

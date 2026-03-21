@@ -1,4 +1,5 @@
 """AR 应收路由"""
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -13,6 +14,7 @@ from api.schemas.ar import (
     QualityCheckResponse,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -39,7 +41,8 @@ async def get_ar_summary(
         )
         return results
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_ar_summary failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/customer", response_model=list[CustomerARResponse])
@@ -68,7 +71,8 @@ async def get_customer_ar(
         )
         return results
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_customer_ar failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/detail", response_model=list[ARDetailResponse])
@@ -103,7 +107,8 @@ async def get_ar_detail(
         )
         return results
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_ar_detail failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/quality-check", response_model=QualityCheckResponse)
@@ -153,4 +158,5 @@ async def check_ar_quality(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("check_ar_quality failed")
+        raise HTTPException(status_code=500, detail="Internal server error")

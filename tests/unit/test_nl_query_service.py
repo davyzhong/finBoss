@@ -56,11 +56,11 @@ class TestNLQueryServiceValidateSql:
             rag_service=MagicMock(),
             clickhouse_service=MagicMock(),
         )
-        # SELECTED 不是 SELECT
-        assert service._validate_sql("SELECTED * FROM test") is True
-        # DELETED 不是 DELETE
-        assert service._validate_sql("DELETED * FROM test") is True
-        # CALLER 不是 CALL
+        # SELECTED（SELECT的一个变体）不包含完整 SELECT 关键字作为子串
+        assert service._validate_sql("SELECT SELECTED * FROM test") is True
+        # SELECT DELETED — DELETED 不是 DELETE（DELETE后面没有边界接续）
+        assert service._validate_sql("SELECT DELETED FROM test") is True
+        # SELECT CALLER — CALLER 不是 CALL
         assert service._validate_sql("SELECT CALLER FROM test") is True
 
 

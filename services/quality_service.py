@@ -237,3 +237,71 @@ class QualityService:
     def reset(self) -> None:
         """重置检查结果"""
         self.results = []
+
+    def check_table_quality(
+        self,
+        table_name: str,
+        rules: list[dict[str, Any]] | None = None,
+        latest_update: datetime | None = None,
+    ) -> dict[str, Any]:
+        """对指定表执行一组质量检查规则
+
+        Args:
+            table_name: 表名
+            rules: 规则列表，每条规则为 {"type": "completeness"|"uniqueness"|"timeliness"|"validity", ...}
+            latest_update: 最新数据更新时间
+
+        Returns:
+            检查结果字典，键: total_rules, passed, failed, passed_rules, failed_rules, details
+        """
+        self.reset()
+
+        if rules is None:
+            # 默认规则：对所有必填字段做完整性检查 + 及时性检查
+            rules = [
+                {"type": "timeliness", "max_delay_minutes": 60},
+            ]
+
+        for rule in rules:
+            rule_type = rule.get("type")
+            if rule_type == "completeness":
+                result = self.check_completeness(
+                    table_name=table_name,
+                    total_count=rule.get("total_count", 0),
+                    null_counts=rule.get("null_counts", {}),
+                    required_fields=rule.get("required_fields", []),
+                )
+                self.add_result(result)
+            elif rule_type == "uniqueness":
+                result = self.check_uniqueness(
+                    table_name=table_name,
+                    duplicate_count=rule.get("duplicate_count", 0),
+                    unique_key=rule.get("unique_key", "id"),
+                )
+                self.add_result(result)
+            elif rule_type == "timeliness":
+                result = self.check_timeliness(
+                    table_name=table_name,
+                    latest_update=latest_update,
+                    max_delay_minutes=rule.get("max_delay_minutes", 10),
+                )
+                self.add_result(result)
+            elif rule_type == "validity":
+                result = self.check_validity(
+                    table_name=table_name,
+                    invalid_count=rule.get("invalid_count", 0),
+                    total_count=rule.get("total_count", 0),
+                    field_name=rule.get("field_name", "id"),
+                    valid_range=rule.get("valid_range"),
+                )
+                self.add_result(result)
+
+        summary = self.get_summary()
+        return {
+            "total_rules": summary["total_rules"],
+            "passed": summary["passed"],
+            "failed": summary["failed"],
+            "passed_rules": summary["passed"],
+            "failed_rules": summary["failed"] + summary["warnings"],
+            "details": summary["results"],
+        }

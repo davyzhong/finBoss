@@ -72,15 +72,17 @@ class QualityCheckRequest(BaseModel):
 
     table_name: str = Field(description="表名")
     max_delay_minutes: int = Field(default=10, description="最大延迟分钟数")
+    rules: list[dict] = Field(default_factory=list, description="质量检查规则列表")
 
 
 class QualityCheckResponse(BaseModel):
     """质量检查响应"""
 
-    total_rules: int
+    table_name: str
+    check_time: datetime
+    latest_update: datetime | None
     passed: int
-    failed: int
-    warnings: int
-    pass_rate: float
-    overall_pass: bool
-    results: list[dict]
+    total_rules: int
+    passed_rules: int
+    failed_rules: int
+    details: list[dict]

@@ -5,6 +5,7 @@ from typing import Any
 from services.ai.ollama_service import OllamaService
 from services.ai.rag_service import RAGService
 from services.clickhouse_service import ClickHouseDataService
+from services.validators import validate_readonly_sql
 
 # ClickHouse 支持的表及字段信息（用于 Schema 描述）
 DATABASE_SCHEMA = """
@@ -96,15 +97,8 @@ class NLQueryService:
 
     def _validate_sql(self, sql: str) -> bool:
         """验证 SQL 安全性（仅允许 SELECT）"""
-        import re
-
-        dangerous_pattern = re.compile(
-            r"\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE|EXEC|EXECUTE|CALL)\b",
-            re.IGNORECASE,
-        )
-        if dangerous_pattern.search(sql):
-            return False
-        return True
+        is_valid, _ = validate_readonly_sql(sql)
+        return is_valid
 
     def query(self, natural_language: str) -> dict[str, Any]:
         """执行自然语言查询

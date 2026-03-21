@@ -1,11 +1,13 @@
 """AI API 路由 - NL Query, RAG, Ollama"""
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from api.dependencies import NLQueryServiceDep, RAGServiceDep
+from api.dependencies import NLQueryServiceDep
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -44,7 +46,6 @@ async def rag_ingest(
     content: str,
     category: str = "general",
     metadata: dict[str, Any] | None = None,
-    service: RAGServiceDep = None,
 ) -> dict[str, Any]:
     """向知识库添加文档
 
@@ -63,7 +64,6 @@ async def rag_ingest(
 @router.post("/rag/ingest/batch")
 async def rag_ingest_batch(
     documents: list[dict[str, Any]],
-    service: RAGServiceDep = None,
 ) -> dict[str, Any]:
     """批量向知识库添加文档
 
@@ -82,7 +82,6 @@ async def rag_search(
     query: str,
     top_k: int = 5,
     category: str | None = None,
-    service: RAGServiceDep = None,
 ) -> dict[str, Any]:
     """检索知识库
 

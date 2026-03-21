@@ -1,5 +1,5 @@
 """数据查询路由"""
-import re
+import logging
 import time
 from typing import Any
 
@@ -7,49 +7,17 @@ from fastapi import APIRouter, HTTPException
 
 from api.dependencies import ClickHouseServiceDep
 from api.schemas.query import QueryRequest, QueryResponse
+from services.validators import validate_readonly_sql
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# 危险 SQL 模式黑名单
-_DANGEROUS_PATTERNS = [
-    re.compile(r"\bDROP\b", re.IGNORECASE),
-    re.compile(r"\bDELETE\b", re.IGNORECASE),
-    re.compile(r"\bINSERT\b", re.IGNORECASE),
-    re.compile(r"\bUPDATE\b", re.IGNORECASE),
-    re.compile(r"\bTRUNCATE\b", re.IGNORECASE),
-    re.compile(r"\bALTER\b", re.IGNORECASE),
-    re.compile(r"\bCREATE\b", re.IGNORECASE),
-    re.compile(r"\bGRANT\b", re.IGNORECASE),
-    re.compile(r"\bREVOKE\b", re.IGNORECASE),
-    re.compile(r";\s*\w+", re.IGNORECASE),  # 多语句: ;后面的内容
-]
-
-# 仅允许的表名模式
-_ALLOWED_TABLES = re.compile(r"^\w+$")
 
 
 def _validate_sql(sql: str) -> None:
-    """验证 SQL 安全性
-
-    Raises:
-        HTTPException: 如果 SQL 包含危险模式或不是 SELECT
-    """
-    sql_upper = sql.strip().upper()
-
-    # 必须以 SELECT 开头
-    if not sql_upper.startswith("SELECT"):
-        raise HTTPException(
-            status_code=400,
-            detail="Only SELECT queries are allowed",
-        )
-
-    # 检查危险模式
-    for pattern in _DANGEROUS_PATTERNS:
-        if pattern.search(sql):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Forbidden SQL pattern detected: {pattern.pattern}",
-            )
+    """验证 SQL 安全性（委托给 shared validator）"""
+    is_valid, error = validate_readonly_sql(sql)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error)
 
 
 @router.post("/execute", response_model=QueryResponse)
@@ -84,7 +52,8 @@ async def execute_query(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("execute_query failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/tables")
@@ -110,4 +79,5 @@ async def list_tables(clickhouse_service: ClickHouseServiceDep):
         results = clickhouse_service.execute_query(sql)
         return {"tables": results}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("list_tables failed")
+        raise HTTPException(status_code=500, detail="Internal server error")

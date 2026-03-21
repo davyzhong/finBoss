@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from typing import Generator
 
 import pytest
-from factory import Factory, Faker
 from factory.random import reseed_random
 
 from api.config import Settings, get_settings

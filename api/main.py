@@ -30,13 +30,17 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS 配置
-    # Phase 1: 允许所有来源（内部使用）；后续接入认证后改为白名单
+    # CORS 配置：仅允许内部服务调用，不开放跨域
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=[
+            "http://localhost",
+            "http://localhost:8000",
+            "http://127.0.0.1",
+            "http://127.0.0.1:8000",
+        ],
         allow_credentials=False,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
 
