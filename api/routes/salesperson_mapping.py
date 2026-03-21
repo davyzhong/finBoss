@@ -22,8 +22,11 @@ async def list_mappings(service: SalespersonMappingServiceDep):
 
 @router.post("/mappings", response_model=dict)
 async def create_mapping(data: SalespersonMappingCreate, service: SalespersonMappingServiceDep):
-    result = service.create_mapping(data.model_dump())
-    return result
+    try:
+        result = service.create_mapping(data.model_dump())
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.put("/mappings/{record_id}", response_model=dict)
