@@ -12,6 +12,8 @@ from services.alert_service import AlertService
 from services.clickhouse_service import ClickHouseDataService
 from services.customer360_service import Customer360Service
 from services.quality_service import QualityService
+from services.salesperson_mapping_service import SalespersonMappingService
+from services.ap_service import APService
 
 
 @lru_cache
@@ -56,6 +58,18 @@ def get_alert_service() -> AlertService:
     return AlertService()
 
 
+@lru_cache
+def get_salesperson_mapping_service() -> SalespersonMappingService:
+    """获取业务员映射服务实例（单例）"""
+    return SalespersonMappingService()
+
+
+@lru_cache
+def get_ap_service() -> APService:
+    """获取 AP 服务实例（单例）"""
+    return APService()
+
+
 # 类型别名，方便路由使用
 ClickHouseServiceDep = Annotated[ClickHouseDataService, Depends(get_clickhouse_service)]
 QualityServiceDep = Annotated[QualityService, Depends(get_quality_service)]
@@ -65,3 +79,5 @@ NLQueryServiceDep = Annotated[NLQueryService, Depends(get_nl_query_service)]
 AttributionServiceDep = Annotated[AttributionService, Depends(get_attribution_service)]
 Customer360ServiceDep = Annotated[Customer360Service, Depends(get_customer360_service)]
 AlertServiceDep = Annotated[AlertService, Depends(get_alert_service)]
+SalespersonMappingServiceDep = Annotated[SalespersonMappingService, Depends(get_salesperson_mapping_service)]
+APServiceDep = Annotated[APService, Depends(get_ap_service)]

@@ -115,6 +115,72 @@ def _register_phase5_jobs(scheduler: AsyncIOScheduler) -> None:
     )
 
 
+def _register_phase6_jobs(scheduler: AsyncIOScheduler) -> None:
+    """注册 Phase 6 调度任务：per-rep AR 报告"""
+
+    def _per_salesperson_job(report_period: str) -> None:
+        """通用报告生成函数，支持 weekly/monthly"""
+        import logging
+
+        logger3 = logging.getLogger(__name__)
+        try:
+            from services.per_salesperson_report_service import PerSalespersonReportService
+            from services.feishu.feishu_client import FeishuClient
+
+            svc = PerSalespersonReportService()
+            files = svc.generate_for_all(report_period=report_period)
+            if files:
+                # 获取销售群配置
+                from api.config import get_settings
+                settings = get_settings()
+                channel_id = settings.feishu.sales_channel_id
+                if channel_id:
+                    client = FeishuClient()
+                    period_label = "周报" if report_period == "weekly" else "月报"
+                    client.send_card_to_channel(
+                        {
+                            "elements": [
+                                {
+                                    "tag": "markdown",
+                                    "content": (
+                                        f"**📊 AR 业务员{period_label}已生成**\n"
+                                        f"共 {len(files)} 位业务员的报告已就绪：\n"
+                                        + "\n".join(f"- `{f.split('_')[-2]}`" for f in files[:5])
+                                    ),
+                                },
+                                {
+                                    "tag": "action",
+                                    "actions": [{
+                                        "tag": "button",
+                                        "text": {"tag": "plain_text", "content": "查看报告"},
+                                        "type": "primary",
+                                        "url": "/static/reports/",
+                                    }],
+                                },
+                            ]
+                        },
+                        channel_id=channel_id,
+                    )
+            logger3.info(f"[Phase6] Per-salesperson {report_period} reports: {len(files)} generated")
+        except Exception as e:
+            logger3.error(f"[Phase6] Per-salesperson {report_period} report failed: {e}")
+
+    from apscheduler.triggers.cron import CronTrigger
+
+    scheduler.add_job(
+        lambda: _per_salesperson_job("weekly"),
+        CronTrigger(day_of_week="mon", hour=8, minute=5),
+        id="phase6_per_salesperson_weekly",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        lambda: _per_salesperson_job("monthly"),
+        CronTrigger(day=1, hour=8, minute=5),
+        id="phase6_per_salesperson_monthly",
+        replace_existing=True,
+    )
+
+
 def start_scheduler() -> AsyncIOScheduler | None:
     """启动 APScheduler（仅在非测试环境）"""
     global _scheduler
@@ -136,8 +202,9 @@ def start_scheduler() -> AsyncIOScheduler | None:
         replace_existing=True,
     )
     _register_phase5_jobs(_scheduler)
+    _register_phase6_jobs(_scheduler)
     _scheduler.start()
-    logger.info("APScheduler 已启动，Phase 5 调度任务已注册")
+    logger.info("APScheduler 已启动，Phase 5 + Phase 6 调度任务已注册")
     return _scheduler
 
 

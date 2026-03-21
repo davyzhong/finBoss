@@ -1,9 +1,11 @@
 """报告 API 路由"""
+from datetime import date
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 
+from api.dependencies import SalespersonMappingServiceDep
 from services.dashboard_service import DashboardService
 from services.report_service import ReportService
 
@@ -39,11 +41,10 @@ async def trigger_monthly(service: ReportServiceDep):
 
 
 @router.get("/records")
-async def list_records(service: ReportServiceDep, limit: int = 20):
-    """查询报告发送记录"""
+async def list_records(service: ReportServiceDep, limit: int = 50):
+    """查询报告发送记录（含 AP 和 per-rep）"""
     rows = service._ch.execute_query(
-        "SELECT * FROM dm.report_records ORDER BY sent_at DESC LIMIT %(limit)s",
-        {"limit": min(limit, 1000)}
+        f"SELECT * FROM dm.report_records ORDER BY sent_at DESC LIMIT {min(limit, 1000)}"
     )
     return {"items": rows, "total": len(rows)}
 
@@ -52,4 +53,36 @@ async def list_records(service: ReportServiceDep, limit: int = 20):
 async def generate_dashboard(service: DashboardServiceDep):
     """手动生成看板"""
     path = service.generate()
+    return {"status": "generated", "file": path}
+
+
+# --- Phase 6 endpoints ---
+
+
+@router.post("/ar/per-salesperson")
+async def trigger_per_salesperson_report(
+    body: dict | None = Body(default=None),
+):
+    """手动触发业务员 AR 报告"""
+    from services.per_salesperson_report_service import PerSalespersonReportService
+
+    svc = PerSalespersonReportService()
+    sid = body.get("salesperson_id") if body else None
+    period = body.get("report_period", "weekly") if body else "weekly"
+
+    if sid:
+        path = svc.generate_for_salesperson(sid, period)
+        return {"status": "generated", "file": path, "count": 1 if path else 0}
+    else:
+        files = svc.generate_for_all(period)
+        return {"status": "generated", "files": files, "count": len(files)}
+
+
+@router.post("/ap")
+async def trigger_ap_report():
+    """手动触发 AP 报告"""
+    from services.ap_service import APService
+
+    svc = APService()
+    path = svc.generate_dashboard()
     return {"status": "generated", "file": path}

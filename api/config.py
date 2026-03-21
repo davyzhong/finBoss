@@ -180,6 +180,23 @@ class FeishuConfig(BaseSettings):
     verification_token: str = Field(default="", description="Webhook 验证 Token（可选）")
     ops_channel_id: str = Field(default="", description="运营通知飞书渠道ID（群机器人或用户OpenID）")
     mgmt_channel_id: str = Field(default="", description="飞书管理群 Channel ID (OC开头) 或 webhook URL，绑定 FEISHU_MGMT_CHANNEL_ID 环境变量")
+    sales_channel_id: str = Field(default="", description="销售团队飞书群 Channel ID（OC开头），用于发送 per-rep AR 报告")
+
+
+class APConfig(BaseSettings):
+    """AP 扩展配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="ap_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    default_payment_term_days: int = Field(
+        default=30,
+        description="AP 默认付款期限天数，对应 AP_DEFAULT_PAYMENT_TERM_DAYS 环境变量",
+    )
 
 
 class Settings(BaseSettings):
@@ -201,6 +218,7 @@ class Settings(BaseSettings):
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     milvus: MilvusConfig = Field(default_factory=MilvusConfig)
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
+    ap: APConfig = Field(default_factory=APConfig)
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> "Settings":

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AR 报告 - {{ salesperson_name }}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f7fa; padding: 20px; }
+  .container { max-width: 900px; margin: 0 auto; background: white; border-radius: 12px; padding: 32px; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  h1 { font-size: 20px; }
+  .subtitle { color: #888; font-size: 14px; }
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .kpi { background: #f8fafc; border-radius: 8px; padding: 16px; text-align: center; }
+  .kpi .v { font-size: 22px; font-weight: 700; }
+  .kpi .l { font-size: 12px; color: #888; margin-top: 4px; }
+  .kpi .v.danger { color: #e53e3e; }
+  .kpi .v.warning { color: #d69e2e; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 16px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+  th { color: #888; font-size: 12px; text-transform: uppercase; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .tag.high { background: #fed7d7; color: #c53030; }
+  .tag.medium { background: #fefcbf; color: #975a16; }
+  .tag.low { background: #c6f6d5; color: #276749; }
+  .footer { margin-top: 24px; color: #aaa; font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>{{ salesperson_name }} AR 报告</h1>
+    <span class="subtitle">{{ today }} | {{ report_period }}</span>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="v">{{ customer_count }}</div>
+      <div class="l">负责客户</div>
+    </div>
+    <div class="kpi">
+      <div class="v">¥{{ "%.0f"|format(summary.ar_total) }}</div>
+      <div class="l">AR 总额</div>
+    </div>
+    <div class="kpi">
+      <div class="v danger">¥{{ "%.0f"|format(summary.ar_overdue) }}</div>
+      <div class="l">逾期金额</div>
+    </div>
+    <div class="kpi">
+      <div class="v {% if summary.overdue_rate > 0.1 %}danger{% elif summary.overdue_rate > 0.05 %}warning{% endif %}">
+        {{ "%.1f"|format(summary.overdue_rate * 100) }}%
+      </div>
+      <div class="l">逾期率</div>
+    </div>
+  </div>
+
+  {% if summary.new_overdue > 0 %}
+  <div style="background:#fff5f5;border-left:4px solid #e53e3e;padding:12px 16px;margin-bottom:16px;border-radius:4px;font-size:14px;">
+    ⚠️ 本{{ report_period == 'weekly' and '周' or '月' }}新增逾期客户 <strong>{{ summary.new_overdue }}</strong> 个，请及时跟进。
+  </div>
+  {% endif %}
+
+  <h2 style="font-size:15px;margin-bottom:8px;">客户明细</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>客户名称</th>
+        <th>AR总额</th>
+        <th>逾期金额</th>
+        <th>逾期率</th>
+        <th>风险等级</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in customers %}
+    <tr>
+      <td>{{ c.customer_name }}</td>
+      <td>¥{{ "%.0f"|format(c.ar_total) }}</td>
+      <td>¥{{ "%.0f"|format(c.ar_overdue) }}</td>
+      <td>{{ "%.1f"|format(c.overdue_rate * 100) }}%</td>
+      <td>
+        <span class="tag {% if c.risk_level == '高' %}high{% elif c.risk_level == '中' %}medium{% else %}low{% endif %}">
+          {{ c.risk_level }}
+        </span>
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not customers %}
+    <tr><td colspan="5" style="color:#888;text-align:center;">暂无客户数据</td></tr>
+    {% endif %}
+    </tbody>
+  </table>
+
+  <div class="footer">FinBoss AR 业务员报告 | {{ generated_at }}</div>
+</div>
+</body>
+</html>
