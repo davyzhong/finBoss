@@ -179,6 +179,7 @@ class FeishuConfig(BaseSettings):
     bot_name: str = Field(default="FinBoss财务助手", description="机器人名称")
     verification_token: str = Field(default="", description="Webhook 验证 Token（可选）")
     ops_channel_id: str = Field(default="", description="运营通知飞书渠道ID（群机器人或用户OpenID）")
+    mgmt_channel_id: str = Field(default="", description="飞书管理群 Channel ID (OC开头) 或 webhook URL，绑定 FEISHU_MGMT_CHANNEL_ID 环境变量")
 
 
 class Settings(BaseSettings):

@@ -3,9 +3,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from api.config import get_settings
-from api.routes import ai, alerts, ar, attribution, customer360, feishu, knowledge, query
+from api.routes import ai, alerts, ar, attribution, customer360, feishu, knowledge, query, reports
 
 
 @asynccontextmanager
@@ -55,6 +56,14 @@ def create_app() -> FastAPI:
     app.include_router(feishu.router, prefix="/api/v1/feishu", tags=["飞书机器人"])
     app.include_router(customer360.router, prefix="/api/v1", tags=["客户360"])
     app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["预警管理"])
+    app.include_router(reports.router, prefix="/api/v1/reports", tags=["报告管理"])
+
+    # 挂载静态文件目录用于报告页面（隔离到 /static/reports 避免与根 /static 冲突）
+    from pathlib import Path
+
+    static_dir = Path(__file__).parent.parent / "static" / "reports"
+    if static_dir.exists():
+        app.mount("/static/reports", StaticFiles(directory=str(static_dir)), name="static_reports")
 
     @app.get("/health")
     async def health_check():
