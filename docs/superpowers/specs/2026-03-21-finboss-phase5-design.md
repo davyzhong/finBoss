@@ -1,10 +1,11 @@
 # FinBoss Phase 5 - 预警报表与自动化报告
 
-> 版本：v1.1
+> 版本：v1.2
 > 日期：2026-03-21
 > 状态：待评审
 > Changelog:
 > - v1.1: 修复评审指出的指标定义缺失、02:00竞争、环比计算逻辑、业务员通道延期、recipient配置
+> - v1.2: 修复评审指出的 ORDER BY 缺失、env var 未声明、recipients JSON 结构、delta 窗口不均匀、new_overdue_count 无 SQL、FeishuClient 路径
 
 ---
 
@@ -34,6 +35,23 @@ Phase 5 在 Phase 4B 客户360基础上，增加三个功能模块：
 - **数据查询**：复用 `ClickHouseDataService`
 
 无新增基础设施依赖。
+
+### 2.2 组件复用
+
+Phase 5 复用 Phase 4B 已有组件：
+
+| 组件 | 文件 | Phase 5 调用方式 |
+|------|------|----------------|
+| FeishuClient | `services/feishu/feishu_client.py` | `send_card_to_channel(card, channel_id)` |
+| ClickHouseDataService | `services/clickhouse_service.py` | 直接实例化 |
+| APScheduler | `services/scheduler_service.py` | 新增 job 注册 |
+| 配置 | `api/config.py` | 新增 `FEISHU_MGMT_CHANNEL_ID` |
+
+### 2.3 新增环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `FEISHU_MGMT_CHANNEL_ID` | 财务总监飞书群 ID（OC 开头）或 webhook URL |
 
 ### 2.2 模块结构
 
@@ -92,11 +110,45 @@ class AlertRule(BaseModel):
 |---------|------|------|------|------|-------------------|
 | 客户逾期率超标 | overdue_rate | > | 0.3 | 高 | `ar_overdue / ar_total AS overdue_rate` from `dm_customer360` |
 | 单客户逾期金额超标 | overdue_amount | > | 1000000 | 高 | `ar_overdue AS overdue_amount` from `dm_customer360` |
-| 逾期率周环比恶化 | overdue_rate_delta | > | 0.05 | 中 | `(本周逾期率 - 上周逾期率)` from 2个 stat_date 的 `dm_customer360` JOIN |
-| 新增逾期客户 | new_overdue_count | > | 5 | 中 | COUNT WHERE `ar_overdue > 0` AND `stat_date = today` AND NOT EXISTS last week |
-| 账龄超90天占比高 | aging_90pct | > | 0.2 | 高 | SUM(IF(aging_days > 90, ar_amount, 0)) / SUM(ar_amount) |
+| 逾期率周环比恶化 | overdue_rate_delta | > | 0.05 | 中 | 见下方固定7天窗口计算 |
+| 新增逾期客户 | new_overdue_count | > | 5 | 中 | 见下方 SQL |
+| 账龄超90天占比高 | aging_90pct | > | 0.2 | 高 | 见下方 SQL |
 
-**`overdue_rate_delta` 计算说明**：取最近两个有数据的 `stat_date`（通常为今天和昨天），计算 `ar_overdue / ar_total` 的差值。
+**`overdue_rate_delta` 计算（固定7天窗口）**：
+```sql
+-- 避免 stat_date 不连续导致窗口错位；使用固定日期偏移
+SELECT
+    (avg_overdue_rate_last7d - avg_overdue_rate_prev7d) AS overdue_rate_delta
+FROM (
+    SELECT
+        avgIf(ar_overdue / ar_total, stat_date >= today()-6) AS avg_overdue_rate_last7d,
+        avgIf(ar_overdue / ar_total, stat_date BETWEEN today()-13 AND today()-7) AS avg_overdue_rate_prev7d
+    FROM dm.dm_customer360
+    WHERE stat_date >= today()-13
+)
+```
+
+**`new_overdue_count` SQL**：
+```sql
+SELECT countIf(customer_id, ar_overdue > 0 AND prev_overdue = 0)
+FROM (
+    SELECT
+        customer_id, ar_overdue,
+        lagInFrame(ar_overdue) OVER (ORDER BY stat_date) AS prev_overdue
+    FROM dm.dm_customer360
+    WHERE stat_date >= today()-1 AND stat_date <= today()
+    QUALIFY stat_date = today()   -- 只取今天
+)
+```
+
+**`aging_90pct` SQL**（账龄从应收单的 `due_date` 计算）：
+```sql
+SELECT
+    sumIf(ar_amount, date_diff('day', due_date, today()) > 90)
+    / sum(ar_amount) AS aging_90pct
+FROM std.std_ar_record
+WHERE stat_date = today()   -- 或 max(stat_date)
+```
 
 **`new_overdue_count` 计算说明**：今日 `ar_overdue > 0` 且昨日 `ar_overdue = 0` 的客户数。
 
@@ -209,8 +261,8 @@ ReportService.generate_report(type, recipients)
     ▼
 ReportService.send_report(report_id, recipients)
     │
-    ├── 查询各 recipients 的飞书 open_id
-    ├── 发送飞书消息卡片（报告摘要 + 链接按钮）
+    ├── 查询 `dm.report_recipients` 表获取各 channel_id
+    ├── FeishuClient.send_card_to_channel(card, channel_id)
     └── 更新 report_records 状态为 sent
 ```
 
@@ -241,6 +293,7 @@ CREATE TABLE dm.alert_rules (
     created_at     DateTime,
     updated_at     DateTime
 ) ENGINE = ReplacingMergeTree(updated_at)
+ORDER BY (id, updated_at)
 ```
 
 **`dm.alert_history`** — 预警触发历史
@@ -258,6 +311,7 @@ CREATE TABLE dm.alert_history (
     triggered_at   DateTime,
     sent           UInt8
 ) ENGINE = ReplacingMergeTree(triggered_at)
+ORDER BY (rule_id, triggered_at)
 ```
 
 **`dm.report_records`** — 报告发送记录
@@ -267,11 +321,12 @@ CREATE TABLE dm.report_records (
     report_type    String,      -- weekly / monthly
     period_start   Date,
     period_end     Date,
-    recipients     String,      -- JSON: [{"type": "management", "channel_id": "oc_xxx"}]
+    recipients     String,      -- JSON: [{"recipient_id": "mgmt_1", "type": "management"}]
     file_path      String,
     sent_at        DateTime,
     status         String       -- generated / sent / failed
 ) ENGINE = ReplacingMergeTree(sent_at)
+ORDER BY (report_type, sent_at)
 ```
 
 **`dm.report_recipients`** — 报告接收人配置（飞书 channel ID）
@@ -280,10 +335,11 @@ CREATE TABLE dm.report_recipients (
     id              String,
     recipient_type  String,     -- management / sales
     name            String,     -- 如"财务总监群"
-    channel_id      String,     -- 飞书群 ID 或用户 open_id
+    channel_id      String,    -- 飞书群 ID（OC 开头）或 webhook URL
     enabled         UInt8,
     created_at      DateTime
 ) ENGINE = ReplacingMergeTree(created_at)
+ORDER BY (recipient_type, id)
 ```
 
 初始化时插入：`recipient_type=management, channel_id=FEISHU_MGMT_CHANNEL_ID 环境变量值`
