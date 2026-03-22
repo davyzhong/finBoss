@@ -64,7 +64,7 @@ class TestHealthEndpoint:
     def test_health_check(self, client):
         r = client.get("/health")
         assert r.status_code == 200
-        assert r.json()["status"] == "healthy"
+        assert r.json()["status"] == "ok"
 
 
 class TestAREndpoints:
