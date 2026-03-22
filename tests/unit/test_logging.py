@@ -1,5 +1,6 @@
-import logging, json
+import logging, json, sys
 from api.logging import JSONFormatter
+
 
 def test_json_formatter_output():
     formatter = JSONFormatter()
@@ -22,3 +23,18 @@ def test_json_formatter_with_request_id():
     record.request_id = "abc123"
     result = json.loads(formatter.format(record))
     assert result["request_id"] == "abc123"
+
+
+def test_json_formatter_with_exc_info():
+    formatter = JSONFormatter()
+    try:
+        raise ValueError("something went wrong")
+    except ValueError:
+        exc_info = sys.exc_info()
+    record = logging.LogRecord(
+        name="test", level=logging.ERROR, pathname="", lineno=0,
+        msg="error occurred", args=(), exc_info=exc_info
+    )
+    result = json.loads(formatter.format(record))
+    assert "exception" in result
+    assert "ValueError" in result["exception"]
