@@ -1,4 +1,5 @@
 """FastAPI 应用入口"""
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api.config import get_settings
+from api.logging import JSONFormatter
 from api.routes import (
     ai,
     alerts,
@@ -59,6 +61,12 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+
+    # Configure JSON logging for uvicorn
+    for logger_name in ["uvicorn", "uvicorn.access", "uvicorn.error"]:
+        logger = logging.getLogger(logger_name)
+        if logger.handlers:
+            logger.handlers[0].setFormatter(JSONFormatter())
 
     # 注册路由
     app.include_router(ar.router, prefix="/api/v1/ar", tags=["AR应收"])
