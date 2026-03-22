@@ -2,9 +2,20 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from api.exceptions import FinBossError
+from api.error_codes import (
+    INTERNAL_ERROR,
+    VALIDATION_ERROR,
+    UNAUTHORIZED,
+    NOT_FOUND,
+)
 
 from api.config import get_settings
 from api.logging import JSONFormatter
@@ -41,6 +52,68 @@ async def lifespan(app: FastAPI):
 
     stop_scheduler()
     print("Shutting down FinBoss")
+
+
+# ---------------------------------------------------------------------------
+# Exception handlers
+# ---------------------------------------------------------------------------
+
+
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle Pydantic validation errors → 422."""
+    request_id = getattr(request.state, "request_id", "")
+    return JSONResponse(
+        status_code=422,
+        content={
+            "success": False,
+            "error": {"code": VALIDATION_ERROR, "message": str(exc.errors())},
+            "request_id": request_id,
+        },
+    )
+
+
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Handle Starlette HTTP exceptions — pass through original status code."""
+    request_id = getattr(request.state, "request_id", "")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": {"code": INTERNAL_ERROR, "message": exc.detail},
+            "request_id": request_id,
+        },
+    )
+
+
+async def finboss_exception_handler(request: Request, exc: FinBossError):
+    """Handle FinBoss business exceptions → 500."""
+    request_id = getattr(request.state, "request_id", "")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": {"code": exc.code, "message": exc.detail or str(exc)},
+            "request_id": request_id,
+        },
+    )
+
+
+async def general_exception_handler(request: Request, exc: Exception):
+    """Catch-all for unexpected exceptions → 500."""
+    request_id = getattr(request.state, "request_id", "")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": {"code": INTERNAL_ERROR, "message": "Internal server error"},
+            "request_id": request_id,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# App factory
+# ---------------------------------------------------------------------------
 
 
 def create_app() -> FastAPI:
@@ -106,6 +179,12 @@ def create_app() -> FastAPI:
 
     # Health check endpoints (replaces inline /health)
     app.include_router(health.router)
+
+    # Register global exception handlers
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(FinBossError, finboss_exception_handler)
+    app.add_exception_handler(Exception, general_exception_handler)
 
     return app
 
