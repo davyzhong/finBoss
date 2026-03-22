@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from api.config import get_settings
 from api.logging import JSONFormatter
 from api.middleware.auth import AuthMiddleware
+from api.middleware.rate_limit import RateLimitMiddleware
 from api.routes import (
     ai,
     alerts,
@@ -67,6 +68,12 @@ def create_app() -> FastAPI:
     app.add_middleware(
         AuthMiddleware,
         api_keys=settings.api_key.keys,
+    )
+
+    # Rate Limiting
+    app.add_middleware(
+        RateLimitMiddleware,
+        limit=settings.api_key.rate_limit,
     )
 
     # Configure JSON logging for uvicorn
