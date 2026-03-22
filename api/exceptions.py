@@ -1,15 +1,21 @@
 class FinBossError(Exception):
     """业务异常基类"""
+
     code: str = "INTERNAL_ERROR"
+    detail: str = ""
+
+    def __init__(self, detail: str = ""):
+        super().__init__(detail)
+        self.detail = detail
 
 
 class QualityError(FinBossError):
-    code = "QUALITY_ERROR"
+    code: str = "QUALITY_ERROR"
 
 
 class DataServiceError(FinBossError):
-    code = "DATA_SERVICE_ERROR"
+    code: str = "DATA_SERVICE_ERROR"
 
 
 class AIServiceError(FinBossError):
-    code = "AI_SERVICE_ERROR"
+    code: str = "AI_SERVICE_ERROR"

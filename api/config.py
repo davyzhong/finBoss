@@ -287,7 +287,7 @@ class APIKeyConfig(BaseSettings):
     def _parse_keys(cls, v):
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
-        return v or []
+        return v if v is not None else []
 
 
 class Settings(BaseSettings):

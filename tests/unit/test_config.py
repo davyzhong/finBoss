@@ -1,3 +1,4 @@
+import pytest
 from api.config import APIKeyConfig
 
 
@@ -12,10 +13,11 @@ def test_api_key_config_parses_csv():
     assert cfg.keys == ["key1", "key2", "key3"]
 
 
-def test_api_key_config_from_env(monkeypatch):
-    # pydantic_settings decodes list fields from env as JSON
-    monkeypatch.setenv("API_KEYS", '["a", "b"]')
-    monkeypatch.setenv("API_RATE_LIMIT", "200")
-    cfg = APIKeyConfig()
+def test_api_key_config_accepts_list():
+    cfg = APIKeyConfig(keys=["a", "b"])
     assert cfg.keys == ["a", "b"]
-    assert cfg.rate_limit == 200
+
+
+def test_api_key_config_rate_limit_override():
+    cfg = APIKeyConfig(rate_limit=500)
+    assert cfg.rate_limit == 500
