@@ -106,3 +106,64 @@ class TestQualityHistory:
             assert result[0]["score_pct"] == 80.0
             assert result[0]["high_severity"] == 2
             assert result[0]["medium_severity"] == 3
+
+
+class TestAggregatedAnomalies:
+    def test_group_by_table(self):
+        from services.field_quality_service import FieldQualityService
+        with patch.object(FieldQualityService, "__init__", lambda self, ch=None: None):
+            svc = FieldQualityService()
+            svc._ch = MagicMock()
+            svc._ch.execute_query.return_value = [
+                {"id": "1", "table_name": "std.std_ar", "column_name": "ar_amount",
+                 "metric": "null_rate", "value": 0.3, "threshold": 0.2,
+                 "severity": "高", "status": "open", "assignee": "zhang",
+                 "detected_at": datetime.now()},
+                {"id": "2", "table_name": "std.std_ar", "column_name": "due_date",
+                 "metric": "null_rate", "value": 0.25, "threshold": 0.2,
+                 "severity": "中", "status": "open", "assignee": "",
+                 "detected_at": datetime.now()},
+                {"id": "3", "table_name": "dm.dm_customer360", "column_name": "ar_overdue",
+                 "metric": "null_rate", "value": 0.15, "threshold": 0.2,
+                 "severity": "低", "status": "open", "assignee": "li",
+                 "detected_at": datetime.now()},
+            ]
+            result = svc.get_aggregated_anomalies(group_by=["table"])
+            assert result["total_anomalies"] == 3
+            keys = {g["key"] for g in result["groups"]}
+            assert "std.std_ar" in keys
+            assert "dm.dm_customer360" in keys
+            std_ar_group = next(g for g in result["groups"] if g["key"] == "std.std_ar")
+            assert std_ar_group["total"] == 2
+            assert std_ar_group["高"] == 1
+            assert std_ar_group["中"] == 1
+            assert std_ar_group["unassigned"] == 1
+
+    def test_group_by_assignee(self):
+        from services.field_quality_service import FieldQualityService
+        with patch.object(FieldQualityService, "__init__", lambda self, ch=None: None):
+            svc = FieldQualityService()
+            svc._ch = MagicMock()
+            svc._ch.execute_query.return_value = [
+                {"id": "1", "table_name": "std.std_ar", "column_name": "ar_amount",
+                 "metric": "null_rate", "value": 0.3, "threshold": 0.2,
+                 "severity": "高", "status": "open", "assignee": "zhang",
+                 "detected_at": datetime.now()},
+                {"id": "2", "table_name": "std.std_ar", "column_name": "due_date",
+                 "metric": "null_rate", "value": 0.25, "threshold": 0.2,
+                 "severity": "中", "status": "open", "assignee": "zhang",
+                 "detected_at": datetime.now()},
+            ]
+            result = svc.get_aggregated_anomalies(group_by=["assignee"])
+            zhang_group = next(g for g in result["groups"] if g["key"] == "zhang")
+            assert zhang_group["total"] == 2
+
+    def test_empty_result(self):
+        from services.field_quality_service import FieldQualityService
+        with patch.object(FieldQualityService, "__init__", lambda self, ch=None: None):
+            svc = FieldQualityService()
+            svc._ch = MagicMock()
+            svc._ch.execute_query.return_value = []
+            result = svc.get_aggregated_anomalies(group_by=["table"])
+            assert result["groups"] == []
+            assert result["total_anomalies"] == 0

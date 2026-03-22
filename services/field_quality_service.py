@@ -210,6 +210,20 @@ class FieldQualityService:
             )
 
         overall_score = sum(table_scores) / len(table_scores) if table_scores else 100.0
+        # 自动分析高危未分析异常
+        from api.config import get_settings
+        if get_settings().ai_analysis.auto_analyze_high_severity:
+            unanalyzed = self._ch.execute_query(
+                "SELECT id FROM dm.quality_anomalies "
+                "WHERE severity = '高' AND root_cause = '' "
+                "LIMIT 10"
+            )
+            for row in unanalyzed:
+                try:
+                    self.analyze_anomaly(row["id"])
+                except Exception:
+                    pass  # 不阻塞扫描主流程
+
         self.generate_report_html(stat_date)  # write HTML after persisting results
         return {
             "report_id": report_id,
@@ -535,3 +549,160 @@ class FieldQualityService:
             )
 
         return {"email_sent": email_count, "dingtalk_sent": 1 if dingtalk_ok else 0}
+
+    def analyze_anomaly(self, anomaly_id: str) -> dict[str, Any] | None:
+        """对指定异常执行 AI 根因分析"""
+        from services.ai_analysis_service import AIGenAnalysisService
+
+        rows = self._ch.execute_query(
+            "SELECT * FROM dm.quality_anomalies WHERE id = %(id)s LIMIT 1",
+            {"id": anomaly_id}
+        )
+        if not rows:
+            return None
+        row = rows[0]
+
+        # 计算持续天数
+        detected: datetime = row["detected_at"]
+        duration_days = max(1, (datetime.now() - detected).days)
+
+        # 调用 AI 分析
+        ai_svc = AIGenAnalysisService()
+        result = ai_svc.analyze(
+            table_name=row["table_name"],
+            column_name=row["column_name"],
+            metric=row["metric"],
+            value=float(row["value"]),
+            threshold=float(row["threshold"]),
+            duration_days=duration_days,
+        )
+
+        # 写入 ClickHouse（ReplacingMergeTree，同 id 行自动替换旧行）
+        now = datetime.now()
+        self._ch.execute(
+            "INSERT INTO dm.quality_anomalies "
+            "(id, report_id, stat_date, table_name, column_name, metric, value, threshold, "
+            "severity, status, detected_at, resolved_at, assignee, sla_hours, "
+            "root_cause, analyzed_at, model_used) "
+            "VALUES "
+            "(%(id)s, %(report_id)s, %(stat_date)s, %(table_name)s, %(column_name)s, %(metric)s, "
+            "%(value)s, %(threshold)s, %(severity)s, %(status)s, %(detected_at)s, %(resolved_at)s, "
+            "%(assignee)s, %(sla_hours)s, %(root_cause)s, %(analyzed_at)s, %(model_used)s)",
+            {
+                "id": anomaly_id,
+                "report_id": row["report_id"],
+                "stat_date": row["stat_date"],
+                "table_name": row["table_name"],
+                "column_name": row["column_name"],
+                "metric": row["metric"],
+                "value": row["value"],
+                "threshold": row["threshold"],
+                "severity": row["severity"],
+                "status": row["status"],
+                "detected_at": row["detected_at"],
+                "resolved_at": row.get("resolved_at"),
+                "assignee": row.get("assignee", ""),
+                "sla_hours": row.get("sla_hours", 0.0),
+                "root_cause": result["root_cause"],
+                "analyzed_at": now,
+                "model_used": result["model_used"],
+            }
+        )
+
+        result["anomaly_id"] = anomaly_id
+        result["analyzed_at"] = now.isoformat()
+        return result
+
+    def get_aggregated_anomalies(
+        self,
+        group_by: list[str],
+        status: str | None = None,
+        min_severity: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """多维度异常聚合视图"""
+        # 构建 WHERE 子句（SQL 注入安全）
+        conditions = []
+        params: dict[str, Any] = {}
+        if status:
+            conditions.append("status = %(status)s")
+            params["status"] = status
+        if min_severity:
+            # 级别过滤：min_severity="中" 时只显示 severity in ("高","中")
+            sev_order = ["高", "中", "低"]
+            min_idx = sev_order.index(min_severity)
+            relevant_levels = sev_order[:min_idx + 1]
+            sev_conditions = " OR ".join(
+                f"severity = %(sev_{i})" for i, _ in enumerate(relevant_levels)
+            )
+            conditions.append(f"({sev_conditions})")
+            for i, level in enumerate(relevant_levels):
+                params[f"sev_{i}"] = level
+
+        where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
+        # 查询基础数据（带 ORDER BY 防止乱序）
+        base_sql = (
+            "SELECT id, table_name, column_name, metric, value, threshold, severity, "
+            "status, assignee, detected_at "
+            "FROM dm.quality_anomalies "
+            f"{where_clause} "
+            "ORDER BY detected_at DESC"
+        )
+        rows = self._ch.execute_query(base_sql, params)
+        if not rows:
+            return {"groups": [], "total_anomalies": 0}
+
+        # 按 group_by 维度分组
+        groups_map: dict[str, dict[str, Any]] = {}
+        now_dt = datetime.now()
+
+        for row in rows:
+            # 生成复合 key
+            key_parts = []
+            for dim in group_by:
+                if dim == "table":
+                    key_parts.append(row["table_name"])
+                elif dim == "assignee":
+                    key_parts.append(row["assignee"] or "(unassigned)")
+                elif dim == "severity":
+                    key_parts.append(row["severity"])
+            key = "::".join(key_parts) if key_parts else "all"
+
+            if key not in groups_map:
+                groups_map[key] = {
+                    "key": key,
+                    "total": 0,
+                    "high": 0,
+                    "medium": 0,
+                    "low": 0,
+                    "unassigned": 0,
+                    "oldest_age_days": 0,
+                    "items": [],
+                }
+            g = groups_map[key]
+            g["total"] += 1
+            sev = row["severity"]
+            g[sev] = g.get(sev, 0) + 1
+            if not row["assignee"]:
+                g["unassigned"] += 1
+
+            detected: datetime = row["detected_at"]
+            age_days = (now_dt - detected).days
+            if age_days > g["oldest_age_days"]:
+                g["oldest_age_days"] = age_days
+
+            if len(g["items"]) < limit:
+                g["items"].append({
+                    "id": row["id"],
+                    "table_name": row["table_name"],
+                    "column_name": row["column_name"],
+                    "severity": row["severity"],
+                    "status": row["status"],
+                    "assignee": row["assignee"] or "",
+                    "created_at": detected.date().isoformat() if hasattr(detected, "date") else str(detected)[:10],
+                })
+
+        groups = list(groups_map.values())
+        total = sum(g["total"] for g in groups)
+        return {"groups": groups, "total_anomalies": total}
