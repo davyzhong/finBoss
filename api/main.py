@@ -18,6 +18,7 @@ from api.routes import (
     attribution,
     customer360,
     feishu,
+    health,
     knowledge,
     quality,
     query,
@@ -103,14 +104,8 @@ def create_app() -> FastAPI:
     if static_dir.exists():
         app.mount("/static/reports", StaticFiles(directory=str(static_dir)), name="static_reports")
 
-    @app.get("/health")
-    async def health_check():
-        """健康检查"""
-        return {
-            "status": "healthy",
-            "service": settings.app.app_name,
-            "version": settings.app.app_version,
-        }
+    # Health check endpoints (replaces inline /health)
+    app.include_router(health.router)
 
     return app
 
