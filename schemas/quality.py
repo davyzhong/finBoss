@@ -38,6 +38,9 @@ class QualityAnomaly(BaseModel):
     resolved_at: datetime | None = None
     assignee: str = ""
     sla_hours: float = 0.0
+    root_cause: str = ""
+    analyzed_at: datetime | None = None
+    model_used: str = ""
 
 
 class QualityReport(BaseModel):

@@ -65,3 +65,38 @@ class SendDigestResponse(BaseModel):
     status: str
     email_sent: int
     dingtalk_sent: int
+
+
+class RootCauseAnalysisResponse(BaseModel):
+    anomaly_id: str
+    root_cause: str
+    suggestions: list[str]
+    confidence: Literal["high", "medium", "low"]
+    model_used: str
+    analyzed_at: datetime
+
+
+class AggregatedAnomalyItem(BaseModel):
+    id: str
+    table_name: str
+    column_name: str
+    severity: str
+    status: str
+    assignee: str
+    created_at: date
+
+
+class AggregatedAnomalyGroup(BaseModel):
+    key: str
+    total: int
+    high: int
+    medium: int
+    low: int
+    unassigned: int
+    oldest_age_days: int
+    items: list[AggregatedAnomalyItem]
+
+
+class AggregatedAnomaliesResponse(BaseModel):
+    groups: list[AggregatedAnomalyGroup]
+    total_anomalies: int

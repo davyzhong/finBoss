@@ -252,6 +252,23 @@ class QualityAlertConfig(BaseSettings):
     digest_time: str = Field(default="07:00", description="每日摘要发送时间 (HH:MM)")
 
 
+class AIAnalysisConfig(BaseSettings):
+    """AI 根因分析配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="quality_ai_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    default_model: str = Field(default="qwen2.5:7b", description="Ollama 默认模型")
+    use_openai: bool = Field(default=False, description="切换到 OpenAI")
+    openai_model: str = Field(default="gpt-4o-mini", description="OpenAI 模型名")
+    openai_api_key: str = Field(default="", description="OpenAI API Key")
+    auto_analyze_high_severity: bool = Field(default=True, description="自动分析高危异常")
+
+
 class Settings(BaseSettings):
     """全局配置"""
 
@@ -275,6 +292,7 @@ class Settings(BaseSettings):
     quality_email: QualityEmailConfig = Field(default_factory=QualityEmailConfig)
     quality_dingtalk: QualityDingTalkConfig = Field(default_factory=QualityDingTalkConfig)
     quality_alert: QualityAlertConfig = Field(default_factory=QualityAlertConfig)
+    ai_analysis: AIAnalysisConfig = Field(default_factory=AIAnalysisConfig)
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> "Settings":
