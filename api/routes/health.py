@@ -29,7 +29,7 @@ async def ready() -> dict[str, Any]:
             ch = ClickHouseDataService()
             await asyncio.to_thread(ch.execute, "SELECT 1")
         components["clickhouse"] = "ok"
-    except asyncio.TimeoutError:
+    except TimeoutError:
         components["clickhouse"] = "timeout"
         overall = "not_ready"
     except Exception as e:
@@ -49,7 +49,7 @@ async def ready() -> dict[str, Any]:
                 components["ollama"] = "degraded"
                 if overall == "ready":
                     overall = "degraded"
-    except asyncio.TimeoutError:
+    except TimeoutError:
         components["ollama"] = "timeout"
         overall = "degraded"
     except Exception as e:

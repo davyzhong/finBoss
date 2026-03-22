@@ -1,11 +1,14 @@
 """报告 API 集成测试"""
+import os
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from api.main import create_app
+from api.config import get_settings
 from api.routes.reports import get_dashboard_service, get_report_service
+from tests.conftest import TEST_API_KEY
 
 
 class MockReportService:
@@ -33,10 +36,12 @@ class MockDashboardService:
 @pytest.fixture
 def mock_report_client():
     """带 Mock ReportService 的测试客户端"""
+    os.environ["API_KEYS"] = TEST_API_KEY
+    get_settings.cache_clear()
     mock_svc = MockReportService()
     app = create_app()
     app.dependency_overrides[get_report_service] = lambda: mock_svc
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": TEST_API_KEY})
     client.mock_svc = mock_svc
     yield client
     app.dependency_overrides.clear()
@@ -45,10 +50,12 @@ def mock_report_client():
 @pytest.fixture
 def mock_dashboard_client():
     """带 Mock DashboardService 的测试客户端"""
+    os.environ["API_KEYS"] = TEST_API_KEY
+    get_settings.cache_clear()
     mock_svc = MockDashboardService()
     app = create_app()
     app.dependency_overrides[get_dashboard_service] = lambda: mock_svc
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": TEST_API_KEY})
     client.mock_svc = mock_svc
     yield client
     app.dependency_overrides.clear()

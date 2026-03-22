@@ -1,10 +1,11 @@
 """配置管理"""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field, PrivateAttr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -279,15 +280,25 @@ class APIKeyConfig(BaseSettings):
         extra="ignore",
     )
 
-    keys: list[str] = Field(default=[], description="允许的 API Key 列表")
+    # Note: no validation_alias — pydantic_settings would try to JSON-parse
+    # the env value if we used list[str]. We handle env-var reading manually in
+    # __init__ to avoid that issue while still supporting direct kwargs.
+    keys_str: str = Field(default="")
     rate_limit: int = Field(default=100, description="每分钟每 IP 每端点请求数")
+    _keys: list = PrivateAttr(default=[])
 
-    @field_validator("keys", mode="before")
-    @classmethod
-    def _parse_keys(cls, v):
-        if isinstance(v, str):
-            return [s.strip() for s in v.split(",") if s.strip()]
-        return v if v is not None else []
+    def __init__(self, **data):
+        # Read API_KEYS env var directly (avoids pydantic_settings JSON-parse trap)
+        raw_keys = data.pop("keys_str", None) or os.environ.get("API_KEYS", "")
+        super().__init__(**data)
+        # Set keys_str from env (overridden if passed as kwarg)
+        object.__setattr__(self, "keys_str", raw_keys)
+        object.__setattr__(self, "_keys", [s.strip() for s in raw_keys.split(",") if s.strip()])
+
+    @property
+    def keys(self) -> list[str]:
+        """Return parsed API keys list for AuthMiddleware."""
+        return self._keys
 
 
 class Settings(BaseSettings):

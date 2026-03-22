@@ -3,8 +3,6 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from schemas.quality import AnomalyStatus
-
 
 class CheckResponse(BaseModel):
     status: str

@@ -1,14 +1,19 @@
 """数据质量 API 集成测试"""
+import os
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
-from api.main import app
+from api.main import create_app
+from api.config import get_settings
+from tests.conftest import TEST_API_KEY
 
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    os.environ["API_KEYS"] = TEST_API_KEY
+    get_settings.cache_clear()
+    return TestClient(create_app(), headers={"X-API-Key": TEST_API_KEY})
 
 
 class TestQualityAPI:

@@ -1,6 +1,7 @@
 """预警 API 请求/响应模型"""
 from datetime import datetime
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel
 
 
 class AlertRuleCreate(BaseModel):

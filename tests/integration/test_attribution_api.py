@@ -1,9 +1,14 @@
 """测试归因分析 API"""
+import os
 from fastapi.testclient import TestClient
 
-from api.main import app
+from api.main import create_app
+from tests.conftest import TEST_API_KEY
 
-client = TestClient(app)
+os.environ["API_KEYS"] = TEST_API_KEY
+from api.config import get_settings
+get_settings.cache_clear()
+client = TestClient(create_app(), headers={"X-API-Key": TEST_API_KEY})
 
 
 def test_analyze_endpoint_exists():

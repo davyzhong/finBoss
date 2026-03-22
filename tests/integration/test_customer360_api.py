@@ -1,5 +1,6 @@
 # tests/integration/test_customer360_api.py
 """客户360 API 集成测试"""
+import os
 from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -7,7 +8,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from api.main import app
+from api.main import create_app
+from api.config import get_settings
 from api.dependencies import get_customer360_service
 from schemas.customer360 import (
     Customer360Summary,
@@ -18,6 +20,7 @@ from schemas.customer360 import (
     RawCustomer,
     MatchAction,
 )
+from tests.conftest import TEST_API_KEY
 
 
 @pytest.fixture
@@ -30,10 +33,13 @@ def mock_customer360_service():
 @pytest.fixture
 def client(mock_customer360_service):
     """TestClient with scheduler and service mocked"""
+    os.environ["API_KEYS"] = TEST_API_KEY
+    get_settings.cache_clear()
     with patch("services.scheduler_service.start_scheduler"), \
          patch("services.scheduler_service.stop_scheduler"):
+        app = create_app()
         app.dependency_overrides[get_customer360_service] = lambda: mock_customer360_service
-        yield TestClient(app)
+        yield TestClient(app, headers={"X-API-Key": TEST_API_KEY})
         app.dependency_overrides.clear()
 
 
@@ -103,7 +109,7 @@ class TestCustomer360DistributionAPI:
     def test_get_distribution_invalid_date(self, client, mock_customer360_service):
         response = client.get("/api/v1/customer360/distribution?stat_date=invalid-date")
         assert response.status_code == 400
-        assert "无效的日期格式" in response.json()["detail"]
+        assert "无效的日期格式" in response.json()["error"]["message"]
 
 
 class TestCustomer360TrendAPI:
@@ -154,7 +160,7 @@ class TestCustomer360DetailAPI:
         mock_customer360_service.get_customer_detail.return_value = {}
         response = client.get("/api/v1/customer360/NONEXISTENT/detail")
         assert response.status_code == 404
-        assert "客户不存在" in response.json()["detail"]
+        assert "客户不存在" in response.json()["error"]["message"]
 
 
 class TestMergeQueueAPI:
@@ -305,4 +311,4 @@ class TestCustomer360AttributionAPI:
             "/api/v1/customer360/attribution?start_date=invalid&end_date=2026-03-01"
         )
         assert response.status_code == 400
-        assert "无效的日期格式" in response.json()["detail"]
+        assert "无效的日期格式" in response.json()["error"]["message"]

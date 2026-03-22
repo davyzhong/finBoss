@@ -1,13 +1,12 @@
 """业务员映射 API 路由"""
 import io
-from fastapi import APIRouter, HTTPException, UploadFile, File
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from api.dependencies import SalespersonMappingServiceDep
 from api.schemas.salesperson_mapping import (
     CSVUploadResponse,
-    CustomerMappingResponse,
     SalespersonMappingCreate,
-    SalespersonMappingResponse,
     SalespersonMappingUpdate,
 )
 

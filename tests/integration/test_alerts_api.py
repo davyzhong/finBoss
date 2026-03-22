@@ -1,10 +1,13 @@
 """预警 API 集成测试"""
+import os
 from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
 from api.main import create_app
+from api.config import get_settings
 from api.dependencies import get_alert_service
+from tests.conftest import TEST_API_KEY
 
 
 class MockAlertService:
@@ -40,10 +43,12 @@ class MockAlertService:
 @pytest.fixture
 def mock_client():
     """带 Mock AlertService 的测试客户端"""
+    os.environ["API_KEYS"] = TEST_API_KEY
+    get_settings.cache_clear()
     mock_svc = MockAlertService()
     app = create_app()
     app.dependency_overrides[get_alert_service] = lambda: mock_svc
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": TEST_API_KEY})
     client.mock_svc = mock_svc
     yield client
     app.dependency_overrides.clear()

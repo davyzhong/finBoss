@@ -1,15 +1,20 @@
 """AP API 集成测试"""
 import io
+import os
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
-from api.main import app
+from api.main import create_app
+from api.config import get_settings
+from tests.conftest import TEST_API_KEY
 
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    os.environ["API_KEYS"] = TEST_API_KEY
+    get_settings.cache_clear()
+    return TestClient(create_app(), headers={"X-API-Key": TEST_API_KEY})
 
 
 class TestAPUploadAPI:
@@ -21,7 +26,7 @@ class TestAPUploadAPI:
             files={"file": ("large.csv", io.BytesIO(large_content), "text/csv")},
         )
         assert response.status_code == 413
-        assert "10MB" in response.json()["detail"]
+        assert "10MB" in response.json()["error"]["message"]
 
     def test_upload_rejects_unsupported_type(self, client):
         """不支持的文件类型应返回 400"""
@@ -30,7 +35,7 @@ class TestAPUploadAPI:
             files={"file": ("data.pdf", io.BytesIO(b"pdf content"), "application/pdf")},
         )
         assert response.status_code == 400
-        assert "csv" in response.json()["detail"].lower() or "xlsx" in response.json()["detail"].lower()
+        assert "csv" in response.json()["error"]["message"].lower() or "xlsx" in response.json()["error"]["message"].lower()
 
     def test_upload_valid_csv_returns_result(self, client):
         """有效 CSV 上传应返回解析结果"""

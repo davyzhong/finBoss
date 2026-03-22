@@ -1,13 +1,9 @@
 """预警规则 API 路由"""
-import uuid
-from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Annotated
+from fastapi import APIRouter
 
-from services.alert_service import AlertService
-from api.schemas.alert import AlertRuleCreate, AlertRuleResponse, AlertHistoryResponse
 from api.dependencies import AlertServiceDep
+from api.schemas.alert import AlertHistoryResponse, AlertRuleCreate, AlertRuleResponse
 
 router = APIRouter(tags=["alerts"])
 

@@ -7,9 +7,6 @@ from fastapi import APIRouter, HTTPException, Query
 
 from api.dependencies import Customer360ServiceDep
 from api.schemas.customer360 import (
-    AttributionDataResponse,
-    ConfirmActionRequest,
-    RejectActionRequest,
     UndoMergeRequest,
 )
 

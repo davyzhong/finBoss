@@ -1,9 +1,12 @@
 # tests/conftest.py
 """pytest 配置和 fixtures"""
+import os
 from datetime import datetime, timedelta
 
 import pytest
 from factory.random import reseed_random
+
+TEST_API_KEY = "test-secret-key-for-integration-tests"
 
 from api.config import Settings, get_settings
 from api.dependencies import (

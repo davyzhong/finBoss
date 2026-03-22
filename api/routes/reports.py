@@ -1,11 +1,9 @@
 """报告 API 路由"""
-from datetime import date
 from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends
 
-from api.dependencies import SalespersonMappingServiceDep
 from services.dashboard_service import DashboardService
 from services.report_service import ReportService
 

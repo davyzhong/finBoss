@@ -1,10 +1,11 @@
 """AP 管理 API 路由（占位，后续 Task 4 完整实现）"""
 import io
 from datetime import datetime
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from api.dependencies import APServiceDep
-from api.schemas.ap import APUploadResponse, APSupplierRecord, APKPISummary
+from api.schemas.ap import APUploadResponse
 from services.ap_bank_parser import APBankStatementParser
 
 router = APIRouter()

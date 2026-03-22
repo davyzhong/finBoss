@@ -4,23 +4,21 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from api.exceptions import FinBossError
+from api.config import get_settings
 from api.error_codes import (
     INTERNAL_ERROR,
     VALIDATION_ERROR,
-    UNAUTHORIZED,
-    NOT_FOUND,
 )
-
-from api.config import get_settings
+from api.exceptions import FinBossError
 from api.logging import JSONFormatter
 from api.middleware.auth import AuthMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
+from api.middleware.tracing import TracingMiddleware
 from api.routes import (
     ai,
     alerts,
@@ -137,6 +135,9 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+
+    # Tracing: X-Request-ID generation and propagation
+    app.add_middleware(TracingMiddleware)
 
     # API Key 认证
     app.add_middleware(

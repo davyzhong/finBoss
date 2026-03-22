@@ -1,4 +1,5 @@
 """API 集成测试"""
+import os
 from datetime import datetime
 from unittest.mock import MagicMock
 
@@ -6,7 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.main import create_app
+from api.config import get_settings
 from services.clickhouse_service import ClickHouseDataService
+from tests.conftest import TEST_API_KEY
 
 
 class MockClickHouseService(ClickHouseDataService):
@@ -42,7 +45,9 @@ class MockClickHouseService(ClickHouseDataService):
 
 @pytest.fixture
 def client():
-    return TestClient(create_app())
+    os.environ["API_KEYS"] = TEST_API_KEY
+    get_settings.cache_clear()
+    return TestClient(create_app(), headers={"X-API-Key": TEST_API_KEY})
 
 
 @pytest.fixture
@@ -50,11 +55,13 @@ def mock_client():
     """带 Mock ClickHouse 服务的测试客户端"""
     from api.dependencies import get_clickhouse_service, get_quality_service
 
+    os.environ["API_KEYS"] = TEST_API_KEY
+    get_settings.cache_clear()
     mock_svc = MockClickHouseService()
     app = create_app()
     app.dependency_overrides[get_clickhouse_service] = lambda: mock_svc
     app.dependency_overrides[get_quality_service] = lambda: MagicMock()
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": TEST_API_KEY})
     client.mock_svc = mock_svc  # 给测试直接访问 mock 的途径
     yield client
     app.dependency_overrides.clear()
