@@ -36,6 +36,8 @@ class QualityAnomaly(BaseModel):
     status: AnomalyStatus = AnomalyStatus.OPEN
     detected_at: datetime
     resolved_at: datetime | None = None
+    assignee: str = ""
+    sla_hours: float = 0.0
 
 
 class QualityReport(BaseModel):
