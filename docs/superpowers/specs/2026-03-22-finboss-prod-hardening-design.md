@@ -20,6 +20,11 @@ class APIKeyConfig(BaseSettings):
 
 环境变量：`API_KEYS=key1,key2,key3`
 
+**在 `Settings` 类中注册**（`api/config.py`）：
+```python
+api_key: APIKeyConfig = Field(default_factory=APIKeyConfig)
+```
+
 ### 中间件
 
 `api/middleware/auth.py`：
@@ -173,6 +178,8 @@ def check_rate_limit(client_ip: str, endpoint: str, limit: int = 100, window: in
 
 ## 6. 健康检查
 
+**注意**：`api/main.py` 中现有的 inline `/health` 端点需替换为新 router，以避免路由冲突。
+
 ### `/health`（存活检查）
 
 `api/routes/health.py`：
@@ -195,22 +202,30 @@ async def ready() -> dict[str, Any]:
 
     # ClickHouse
     try:
-        ch = ClickHouseDataService()
-        ch.execute("SELECT 1")
+        async with asyncio.timeout(5):
+            ch = ClickHouseDataService()
+            ch.execute("SELECT 1")
         components["clickhouse"] = "ok"
+    except asyncio.TimeoutError:
+        components["clickhouse"] = "timeout"
+        overall = "not_ready"
     except Exception as e:
         components["clickhouse"] = f"error: {e}"
         overall = "not_ready"
 
     # Ollama
     try:
-        svc = OllamaService()
-        if svc.is_available():
-            components["ollama"] = "ok"
-        else:
-            components["ollama"] = "degraded"
-            if overall == "ready":
-                overall = "degraded"
+        async with asyncio.timeout(5):
+            svc = OllamaService()
+            if svc.is_available():
+                components["ollama"] = "ok"
+            else:
+                components["ollama"] = "degraded"
+                if overall == "ready":
+                    overall = "degraded"
+    except asyncio.TimeoutError:
+        components["ollama"] = "timeout"
+        overall = "degraded"
     except Exception as e:
         components["ollama"] = f"error: {e}"
         overall = "degraded"
@@ -268,7 +283,15 @@ AI_SERVICE_ERROR = "AI_SERVICE_ERROR"
 | `api/main.py` | 修改 — 注册中间件和全局异常 handler |
 | `api/dependencies.py` | 修改 — 新增 Key 认证依赖 |
 | `.env.example` | 修改 — 新增 `API_KEYS`、`API_RATE_LIMIT` |
-| `tests/` | 新增中间件和健康检查单元测试 |
+| `tests/unit/test_rate_limit.py` | 新建 — 固定窗口限流测试 |
+| `tests/unit/test_health.py` | 新建 — 健康检查端点测试 |
+
+---
+
+**注意**：
+- 限流计数器为**进程内存储**，多 uvicorn worker 进程间不共享。如需跨进程限流，需换 Redis。
+- `/health` 响应格式从 `{status, service, version}` 简化为 `{status: "ok"}`，为 breaking change，已有调用方需注意。
+- `/ready` 组件检查为同步（Ollama `is_available()` 为同步方法），如需异步改造可在后续迭代。
 
 ---
 
