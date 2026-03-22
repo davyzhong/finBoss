@@ -24,6 +24,8 @@ class TestQualityAPI:
                 "high_severity": 0,
                 "medium_severity": 0,
                 "score_pct": 90.0,
+                "score_trend": "stable →",
+                "overdue_count": 0,
                 "last_check_at": "2026-03-22T06:00:00",
             }
             resp = client.get("/api/v1/quality/summary")
@@ -175,3 +177,107 @@ class TestQualityAPI:
             assert data["report"]["id"] == "r1"
             assert data["report"]["score_pct"] == 80.0
             assert len(data["anomalies"]) == 1
+
+    def test_get_summary_includes_trend_and_overdue(self, client):
+        with patch(
+            "services.field_quality_service.FieldQualityService.get_summary"
+        ) as mock:
+            mock.return_value = {
+                "stat_date": "2026-03-22",
+                "total_tables": 3,
+                "total_fields": 20,
+                "anomaly_count": 2,
+                "high_severity": 1,
+                "medium_severity": 1,
+                "score_pct": 90.0,
+                "score_trend": "improving ↓",
+                "overdue_count": 0,
+                "last_check_at": "2026-03-22T06:00:00",
+            }
+            resp = client.get("/api/v1/quality/summary")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["score_trend"] == "improving ↓"
+            assert data["overdue_count"] == 0
+
+    def test_list_anomalies_by_assignee(self, client):
+        with patch(
+            "services.field_quality_service.FieldQualityService.list_anomalies"
+        ) as mock:
+            mock.return_value = [
+                {
+                    "id": "a1",
+                    "table_name": "dm.ar",
+                    "column_name": "due_date",
+                    "metric": "null_rate",
+                    "value": 0.35,
+                    "threshold": 0.20,
+                    "severity": "高",
+                    "status": "open",
+                    "assignee": "zhangsan",
+                    "detected_at": "2026-03-22T06:00:00",
+                }
+            ]
+            resp = client.get("/api/v1/quality/anomalies?assignee=zhangsan")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total"] == 1
+            assert data["items"][0]["assignee"] == "zhangsan"
+            mock.assert_called_once_with(None, 100, "zhangsan")
+
+    def test_update_anomaly_assignee(self, client):
+        with patch(
+            "services.field_quality_service.FieldQualityService.update_anomaly"
+        ) as mock:
+            mock.return_value = None
+            resp = client.put(
+                "/api/v1/quality/anomalies/a1",
+                json={"assignee": "lisi", "note": "assigned"},
+            )
+            assert resp.status_code == 200
+            mock.assert_called_once_with("a1", status=None, assignee="lisi")
+
+    def test_get_quality_history(self, client):
+        with patch(
+            "services.field_quality_service.FieldQualityService.get_quality_history"
+        ) as mock_hist, \
+             patch(
+                 "services.field_quality_service.FieldQualityService.get_summary"
+             ) as mock_sum, \
+             patch(
+                 "services.field_quality_service.FieldQualityService._compute_score_trend"
+             ) as mock_trend:
+            mock_hist.return_value = [
+                {
+                    "stat_date": "2026-03-22",
+                    "score_pct": 90.0,
+                    "anomaly_count": 2,
+                    "high_severity": 0,
+                    "medium_severity": 2,
+                },
+                {
+                    "stat_date": "2026-03-21",
+                    "score_pct": 85.0,
+                    "anomaly_count": 5,
+                    "high_severity": 1,
+                    "medium_severity": 4,
+                },
+            ]
+            mock_sum.return_value = {"score_pct": 90.0}
+            mock_trend.return_value = "stable →"
+            resp = client.get("/api/v1/quality/history?days=7")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["score_trend"] == "stable →"
+            assert len(data["points"]) == 2
+
+    def test_send_digest(self, client):
+        with patch(
+            "services.field_quality_service.FieldQualityService.send_quality_digest"
+        ) as mock:
+            mock.return_value = {"email_sent": 2, "dingtalk_sent": 1}
+            resp = client.post("/api/v1/quality/send-digest")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["email_sent"] == 2
+            assert data["dingtalk_sent"] == 1

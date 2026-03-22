@@ -26,6 +26,9 @@ class FieldQualityService:
 
     RATIO_METRICS = {"null_rate", "distinct_rate", "negative_rate"}
 
+    SLA_HIGH = 24.0    # hours
+    SLA_MEDIUM = 72.0   # hours
+
     def __init__(self, ch: ClickHouseDataService | None = None):
         self._ch = ch or ClickHouseDataService()
         self._jinja = Environment(
@@ -241,6 +244,9 @@ class FieldQualityService:
         )
         severity_map = {r["severity"]: r["cnt"] for r in anomaly_rows}
         r = rows[0] if rows else {}
+        score = round(r.get("score_pct") or 100.0, 2)
+        trend = self._compute_score_trend(stat_date, score)
+        overdue = self._count_overdue_anomalies(stat_date)
         return {
             "stat_date": stat_date.isoformat(),
             "total_tables": r.get("total_tables") or 0,
@@ -248,9 +254,72 @@ class FieldQualityService:
             "anomaly_count": r.get("anomaly_count") or 0,
             "high_severity": severity_map.get("高", 0),
             "medium_severity": severity_map.get("中", 0),
-            "score_pct": round(r.get("score_pct") or 100.0, 2),
+            "score_pct": score,
+            "score_trend": trend,
+            "overdue_count": overdue,
             "last_check_at": r.get("last_check_at"),
         }
+
+    def _compute_score_trend(self, stat_date: date, current_score: float) -> str:
+        """Compare current score to previous 2 scan dates. Returns improving/stable/degrading."""
+        rows = self._ch.execute_query(
+            "SELECT stat_date, avg(score_pct) AS score "
+            "FROM dm.quality_reports "
+            "WHERE stat_date < toDate('{sd}') "
+            "GROUP BY stat_date "
+            "ORDER BY stat_date DESC LIMIT 2".format(sd=stat_date.isoformat())
+        )
+        if len(rows) < 2:
+            return "stable →"
+        prev = rows[0].get("score", 100)
+        prev2 = rows[1].get("score", 100)
+        if current_score > prev and prev > prev2:
+            return "improving ↓"
+        if current_score < prev and prev < prev2:
+            return "degrading ↑"
+        return "stable →"
+
+    def _count_overdue_anomalies(self, stat_date: date) -> int:
+        """Count open anomalies past their SLA threshold."""
+        rows = self._ch.execute_query(
+            f"SELECT count() AS cnt FROM dm.quality_anomalies "
+            f"WHERE stat_date = '{stat_date.isoformat()}' "
+            f"  AND status = 'open' "
+            f"  AND ("
+            f"    (severity = '高' AND now() - detected_at > {self.SLA_HIGH} * 3600) "
+            f"    OR (severity = '中' AND now() - detected_at > {self.SLA_MEDIUM} * 3600)"
+            f"  )"
+        )
+        return rows[0].get("cnt", 0) if rows else 0
+
+    def get_quality_history(self, days: int = 7) -> list[dict]:
+        rows = self._ch.execute_query(
+            f"SELECT "
+            f"  stat_date, "
+            f"  avg(score_pct) AS score_pct, "
+            f"  sum(anomaly_count) AS anomaly_count "
+            f"FROM dm.quality_reports "
+            f"WHERE stat_date >= today() - {days} "
+            f"GROUP BY stat_date "
+            f"ORDER BY stat_date ASC"
+        )
+        result = []
+        for r in rows:
+            d = r["stat_date"].isoformat() if hasattr(r["stat_date"], "isoformat") else str(r["stat_date"])
+            score = round(r.get("score_pct") or 100.0, 2)
+            anom_rows = self._ch.execute_query(
+                f"SELECT severity, count() AS cnt FROM dm.quality_anomalies "
+                f"WHERE stat_date = '{d}' AND status = 'open' GROUP BY severity"
+            )
+            sev = {row["severity"]: row["cnt"] for row in anom_rows}
+            result.append({
+                "stat_date": d,
+                "score_pct": score,
+                "anomaly_count": r.get("anomaly_count") or 0,
+                "high_severity": sev.get("高", 0),
+                "medium_severity": sev.get("中", 0),
+            })
+        return result
 
     def list_reports(self, stat_date: date, limit: int = 50) -> list[dict]:
         return self._ch.execute_query(
@@ -270,8 +339,16 @@ class FieldQualityService:
             f"ORDER BY severity DESC, detected_at DESC"
         )
 
-    def list_anomalies(self, status: str | None, limit: int = 100) -> list[dict]:
-        where = f"status = '{status}'" if status else "status = 'open'"
+    def list_anomalies(self, status: str | None, limit: int = 100, assignee: str | None = None) -> list[dict]:
+        where_parts: list[str] = []
+        if status:
+            where_parts.append(f"status = '{status}'")
+        else:
+            where_parts.append("status = 'open'")
+        if assignee:
+            safe = assignee.replace("'", "''")
+            where_parts.append(f"assignee = '{safe}'")
+        where = " AND ".join(where_parts)
         return self._ch.execute_query(
             f"SELECT * FROM dm.quality_anomalies "
             f"WHERE {where} "
@@ -285,18 +362,25 @@ class FieldQualityService:
             f"ORDER BY severity DESC, detected_at DESC LIMIT {limit}"
         )
 
-    def update_anomaly(self, anomaly_id: str, status: str) -> None:
-        # Whitelist status to prevent SQL injection
-        if status not in ("resolved", "ignored"):
-            raise ValueError(f"Invalid status: {status}")
-        # Escape anomaly_id (UUID, but defensive)
+    def update_anomaly(self, anomaly_id: str, status: str | None = None, assignee: str | None = None) -> None:
         safe_id = anomaly_id.replace("'", "''")
+        parts: list[str] = []
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        resolved_at = f"'{now_str}'" if status == "resolved" else "toDateTime('1970-01-01 00:00:00')"
+
+        if status is not None:
+            if status not in ("resolved", "ignored"):
+                raise ValueError(f"Invalid status: {status}")
+            resolved_at = f"'{now_str}'" if status == "resolved" else "toDateTime('1970-01-01 00:00:00')"
+            parts.append(f"status = '{status}', resolved_at = {resolved_at}")
+        if assignee is not None:
+            safe_assignee = assignee.replace("'", "''")
+            parts.append(f"assignee = '{safe_assignee}'")
+
+        if not parts:
+            return
+
         self._ch.execute(
-            f"ALTER TABLE dm.quality_anomalies "
-            f"UPDATE status = '{status}', resolved_at = {resolved_at} "
-            f"WHERE id = '{safe_id}'"
+            f"ALTER TABLE dm.quality_anomalies UPDATE {', '.join(parts)} WHERE id = '{safe_id}'"
         )
 
     # ------------------------------------------------------------------
@@ -311,11 +395,27 @@ class FieldQualityService:
             f"WHERE stat_date = '{stat_date.isoformat()}' "
             f"ORDER BY severity DESC, detected_at DESC LIMIT 200"
         )
+        # Trend data for Chart.js
+        trend = self.get_quality_history(14)
+        # Severity distribution
+        sev_rows = self._ch.execute_query(
+            f"SELECT severity, count() AS cnt FROM dm.quality_anomalies "
+            f"WHERE stat_date = '{stat_date.isoformat()}' GROUP BY severity"
+        )
+        sev_map = {r["severity"]: r["cnt"] for r in sev_rows}
+        severity_data = {
+            "high": sev_map.get("高", 0),
+            "medium": sev_map.get("中", 0),
+            "low": sev_map.get("低", 0),
+        }
+
         template = self._jinja.get_template("quality_report.html.j2")
         html = template.render(
             stat_date=stat_date.isoformat(),
             summary=summary,
             anomalies=[dict(a) for a in anomalies],
+            trend_data=trend,
+            severity_data=severity_data,
             generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
         )
         output_dir = PROJECT_ROOT / "static" / "reports"
@@ -395,3 +495,43 @@ class FieldQualityService:
         })
 
         client.send_card_to_channel(card, channel_id=channel_id)
+
+    def send_quality_digest(self, stat_date: date | None = None) -> dict:
+        """Send daily digest: always sends email + DingTalk if configured."""
+        from services.quality_alert_service import QualityAlertService
+        from api.config import get_settings
+
+        stat_date = stat_date or date.today()
+        summary = self.get_summary(stat_date)
+        anomalies = self.list_open_anomalies(limit=20)
+        date_str = stat_date.isoformat()
+        settings = get_settings()
+        email_cfg = settings.quality_email
+        dingtalk_cfg = settings.quality_dingtalk
+
+        svc = QualityAlertService()
+        email_count = 0
+        dingtalk_ok = False
+
+        if email_cfg and email_cfg.smtp_host:
+            email_count = svc.send_quality_email(
+                summary=summary,
+                anomalies=anomalies,
+                stat_date=date_str,
+                smtp_host=email_cfg.smtp_host,
+                smtp_port=email_cfg.smtp_port,
+                smtp_user=email_cfg.smtp_user,
+                smtp_password=email_cfg.smtp_password,
+                from_addr=email_cfg.from_addr,
+                to_addrs=email_cfg.to_addrs,
+            )
+
+        if dingtalk_cfg and dingtalk_cfg.webhook_url:
+            dingtalk_ok = svc.send_dingtalk(
+                summary=summary,
+                anomalies=anomalies,
+                stat_date=date_str,
+                webhook_url=dingtalk_cfg.webhook_url,
+            )
+
+        return {"email_sent": email_count, "dingtalk_sent": 1 if dingtalk_ok else 0}
