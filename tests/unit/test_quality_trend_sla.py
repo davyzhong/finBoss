@@ -167,3 +167,29 @@ class TestAggregatedAnomalies:
             result = svc.get_aggregated_anomalies(group_by=["table"])
             assert result["groups"] == []
             assert result["total_anomalies"] == 0
+
+    def test_analyze_anomaly_not_found(self):
+        from services.field_quality_service import FieldQualityService
+        with patch.object(FieldQualityService, "__init__", lambda self, ch=None: None):
+            svc = FieldQualityService()
+            svc._ch = MagicMock()
+            svc._ch.execute_query.return_value = []
+            result = svc.analyze_anomaly("nonexistent-id")
+            assert result is None
+
+    def test_min_severity_filter(self):
+        from services.field_quality_service import FieldQualityService
+        with patch.object(FieldQualityService, "__init__", lambda self, ch=None: None):
+            svc = FieldQualityService()
+            svc._ch = MagicMock()
+            # Simulate SQL-level filtering: min_severity="中" adds WHERE severity IN ('高','中')
+            # so the "低" row is filtered out at the SQL level (mocked via side_effect)
+            svc._ch.execute_query.side_effect = lambda sql, params=None: [
+                {"id": "1", "table_name": "t1", "column_name": "c1",
+                 "metric": "null_rate", "value": 0.3, "threshold": 0.2,
+                 "severity": "高", "status": "open", "assignee": "a",
+                 "detected_at": datetime.now()},
+            ]
+            result = svc.get_aggregated_anomalies(group_by=["severity"], min_severity="中")
+            groups = result["groups"]
+            assert all(g["key"] in ("高", "中") for g in groups)

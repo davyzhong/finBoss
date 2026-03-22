@@ -221,8 +221,8 @@ class FieldQualityService:
             for row in unanalyzed:
                 try:
                     self.analyze_anomaly(row["id"])
-                except Exception:
-                    pass  # 不阻塞扫描主流程
+                except Exception as exc:
+                    logger.warning("Auto AI analysis failed for anomaly %s: %s", row["id"], exc)
 
         self.generate_report_html(stat_date)  # write HTML after persisting results
         return {
@@ -563,7 +563,7 @@ class FieldQualityService:
         row = rows[0]
 
         # 计算持续天数
-        detected: datetime = row["detected_at"]
+        detected = row.get("detected_at") or datetime.now()
         duration_days = max(1, (datetime.now() - detected).days)
 
         # 调用 AI 分析
@@ -673,9 +673,9 @@ class FieldQualityService:
                 groups_map[key] = {
                     "key": key,
                     "total": 0,
-                    "high": 0,
-                    "medium": 0,
-                    "low": 0,
+                    "高": 0,
+                    "中": 0,
+                    "低": 0,
                     "unassigned": 0,
                     "oldest_age_days": 0,
                     "items": [],
@@ -687,7 +687,9 @@ class FieldQualityService:
             if not row["assignee"]:
                 g["unassigned"] += 1
 
-            detected: datetime = row["detected_at"]
+            detected = row.get("detected_at")
+            if detected is None:
+                detected = datetime.now()
             age_days = (now_dt - detected).days
             if age_days > g["oldest_age_days"]:
                 g["oldest_age_days"] = age_days
