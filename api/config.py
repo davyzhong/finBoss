@@ -269,6 +269,27 @@ class AIAnalysisConfig(BaseSettings):
     auto_analyze_high_severity: bool = Field(default=True, description="自动分析高危异常")
 
 
+class APIKeyConfig(BaseSettings):
+    """API Key 认证配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="api_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    keys: list[str] = Field(default=[], description="允许的 API Key 列表")
+    rate_limit: int = Field(default=100, description="每分钟每 IP 每端点请求数")
+
+    @field_validator("keys", mode="before")
+    @classmethod
+    def _parse_keys(cls, v):
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v or []
+
+
 class Settings(BaseSettings):
     """全局配置"""
 
@@ -293,6 +314,7 @@ class Settings(BaseSettings):
     quality_dingtalk: QualityDingTalkConfig = Field(default_factory=QualityDingTalkConfig)
     quality_alert: QualityAlertConfig = Field(default_factory=QualityAlertConfig)
     ai_analysis: AIAnalysisConfig = Field(default_factory=AIAnalysisConfig)
+    api_key: APIKeyConfig = Field(default_factory=APIKeyConfig)
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> "Settings":
