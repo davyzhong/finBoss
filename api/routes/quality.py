@@ -6,10 +6,12 @@ from fastapi import APIRouter, HTTPException, Query
 
 from api.dependencies import FieldQualityServiceDep
 from api.schemas.quality import (
+    AggregatedAnomaliesResponse,
     AnomalyUpdateRequest,
     CheckResponse,
     QualityHistoryResponse,
     QualitySummaryResponse,
+    RootCauseAnalysisResponse,
     SendDigestResponse,
 )
 
@@ -66,6 +68,41 @@ async def update_anomaly(
     service.update_anomaly(anomaly_id, status=body.status, assignee=body.assignee)
     new_status = body.status or "updated"
     return {"status": "updated", "id": anomaly_id, "new_status": new_status}
+
+
+@router.post("/anomalies/{anomaly_id}/analyze", response_model=RootCauseAnalysisResponse)
+async def analyze_anomaly(
+    anomaly_id: str,
+    service: FieldQualityServiceDep,
+):
+    """对指定异常执行 AI 根因分析"""
+    from datetime import datetime
+
+    result = service.analyze_anomaly(anomaly_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Anomaly not found")
+    return RootCauseAnalysisResponse(
+        anomaly_id=anomaly_id,
+        root_cause=result["root_cause"],
+        suggestions=result["suggestions"],
+        confidence=result["confidence"],
+        model_used=result["model_used"],
+        analyzed_at=datetime.fromisoformat(result["analyzed_at"]) if result.get("analyzed_at") else datetime.now(),
+    )
+
+
+@router.get("/anomalies/aggregated", response_model=AggregatedAnomaliesResponse)
+async def get_aggregated_anomalies(
+    service: FieldQualityServiceDep,
+    group_by: Annotated[str, Query(description="聚合维度，逗号分隔，如 table,severity")] = "table",
+    status: Literal["open", "resolved", "ignored"] | None = Query(default=None),
+    min_severity: Literal["高", "中", "低"] | None = Query(default=None),
+    limit: int = Query(default=50, le=500),
+):
+    """多维度异常聚合视图"""
+    dims = [d.strip() for d in group_by.split(",") if d.strip()]
+    result = service.get_aggregated_anomalies(dims, status, min_severity, limit)
+    return AggregatedAnomaliesResponse(**result)
 
 
 @router.get("/history", response_model=QualityHistoryResponse)
