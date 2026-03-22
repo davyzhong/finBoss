@@ -103,6 +103,7 @@
         <th>状态</th>
         <th>负责人</th>
         <th>检测时间</th>
+        <th>根因</th>
       </tr>
     </thead>
     <tbody>
@@ -121,10 +122,17 @@
       <td>{{ a.status }}</td>
       <td>{{ a.assignee or '—' }}</td>
       <td>{{ a.detected_at }}</td>
+      <td>
+        {% if a.root_cause %}
+          <span title="{{ a.root_cause }}">{{ a.root_cause[:30] }}...</span>
+        {% else %}
+          <span style="color:#999">未分析</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
     {% if not anomalies %}
-    <tr><td colspan="9" style="color:#718096;text-align:center;">✓ 无异常，数据质量良好</td></tr>
+    <tr><td colspan="10" style="color:#718096;text-align:center;">✓ 无异常，数据质量良好</td></tr>
     {% endif %}
     </tbody>
   </table>
