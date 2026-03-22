@@ -367,7 +367,6 @@ class AIGenAnalysisService:
         value: float,
         threshold: float,
         duration_days: int,
-        context: dict[str, Any],
     ) -> str:
         # 格式化值
         if metric in ("null_rate", "distinct_rate", "negative_rate"):
@@ -416,11 +415,10 @@ class AIGenAnalysisService:
         value: float,
         threshold: float,
         duration_days: int,
-        context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """执行根因分析，返回解析后的结果"""
         prompt = self._build_prompt(
-            table_name, column_name, metric, value, threshold, duration_days, context or {}
+            table_name, column_name, metric, value, threshold, duration_days
         )
         if self._use_openai:
             raw = self._call_openai(prompt)
@@ -575,14 +573,16 @@ def get_aggregated_anomalies(
         conditions.append("status = %(status)s")
         params["status"] = status
     if min_severity:
-        sev_order = {"高": 3, "中": 2, "低": 1}
-        min_val = sev_order.get(min_severity, 1)
-        sev_filter = " OR ".join(
-            f"severity = %(sev_{i})" for i, _ in enumerate(list(sev_order.keys())[:min_val])
+        # 级别过滤：min_severity="中" 时只显示 severity in ("高","中")
+        sev_order = ["高", "中", "低"]
+        min_idx = sev_order.index(min_severity)
+        relevant_levels = sev_order[:min_idx + 1]
+        sev_conditions = " OR ".join(
+            f"severity = %(sev_{i})" for i, _ in enumerate(relevant_levels)
         )
-        conditions.append(f"({sev_filter})")
-        for i, k in enumerate(list(sev_order.keys())[:min_val]):
-            params[f"sev_{i}"] = k
+        conditions.append(f"({sev_conditions})")
+        for i, level in enumerate(relevant_levels):
+            params[f"sev_{i}"] = level
 
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
@@ -600,7 +600,6 @@ def get_aggregated_anomalies(
 
     # 按 group_by 维度分组
     groups_map: dict[str, dict[str, Any]] = {}
-    sev_order = {"高": 3, "中": 2, "低": 1}
     now_dt = datetime.now()
 
     for row in rows:
@@ -656,7 +655,7 @@ def get_aggregated_anomalies(
 
 - [ ] **Step 4: 修改 `check_all()` 方法，在扫描结束后自动分析高危异常**
 
-在 `check_all()` 末尾（return 之前）添加：
+在 `check_all()` 末尾（`return result` 之前）添加：
 
 ```python
 # 自动分析高危未分析异常
