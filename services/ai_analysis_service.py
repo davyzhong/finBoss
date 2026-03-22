@@ -142,4 +142,10 @@ class AIGenAnalysisService:
             )
             resp.raise_for_status()
             data = resp.json()
-            return data["choices"][0]["message"]["content"]
+            choices = data.get("choices")
+            if not choices:
+                raise ValueError("OpenAI returned no choices")
+            first = choices[0]
+            message = first.get("message") or {}
+            content = message.get("content") or ""
+            return content

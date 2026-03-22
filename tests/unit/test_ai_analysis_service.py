@@ -49,6 +49,29 @@ class TestAIGenAnalysisService:
         assert svc._use_openai is False
         assert svc._model == "qwen2.5:7b"
 
+    @patch("services.ai_analysis_service.httpx.Client")
+    def test_analyze_calls_openai(self, mock_http_client_cls):
+        from services.ai_analysis_service import AIGenAnalysisService
+        mock_instance = MagicMock()
+        mock_instance.__enter__ = MagicMock(return_value=mock_instance)
+        mock_instance.__exit__ = MagicMock(return_value=False)
+        mock_instance.post.return_value.json.return_value = {
+            "choices": [{"message": {"content": '{"root_cause":"upstream bug","suggestions":["fix"],"confidence":"high"}'}}]
+        }
+        mock_http_client_cls.return_value = mock_instance
+        svc = AIGenAnalysisService(use_openai=True, openai_api_key="test-key")
+        result = svc.analyze(
+            table_name="std.std_ar",
+            column_name="ar_amount",
+            metric="null_rate",
+            value=0.35,
+            threshold=0.20,
+            duration_days=5,
+        )
+        mock_instance.post.assert_called_once()
+        assert result["root_cause"] == "upstream bug"
+        assert result["model_used"] == "openai"
+
     @patch("services.ai.ollama_service.OllamaService")
     def test_analyze_calls_ollama(self, mock_ollama_cls):
         from services.ai_analysis_service import AIGenAnalysisService
