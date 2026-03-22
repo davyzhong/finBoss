@@ -5,37 +5,43 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>数据质量看板 - {{ stat_date }}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, sans-serif; background: #f5f7fa; padding: 20px; }
-  .container { max-width: 1100px; margin: 0 auto; background: white; border-radius: 12px; padding: 32px; }
+  .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 12px; padding: 32px; }
   .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
   h1 { font-size: 20px; }
-  .kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
-  .kpi { background: #f8fafc; border-radius: 8px; padding: 16px; text-align: center; }
-  .kpi .v { font-size: 22px; font-weight: 700; }
-  .kpi .l { font-size: 12px; color: #888; margin-top: 4px; }
+  h2 { font-size: 15px; color: #2d3748; margin: 24px 0 12px; }
+  .kpi-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 24px; }
+  .kpi { background: #f8fafc; border-radius: 8px; padding: 14px; text-align: center; }
+  .kpi .v { font-size: 20px; font-weight: 700; }
+  .kpi .l { font-size: 11px; color: #718096; margin-top: 4px; }
   .kpi .v.danger { color: #e53e3e; }
   .kpi .v.warning { color: #d69e2e; }
-  .score-bar { height: 8px; background: #e2e8f0; border-radius: 4px; margin-top: 8px; }
-  .score-fill { height: 100%; border-radius: 4px; background: #48bb78; }
+  .kpi .v.success { color: #276749; }
+  .score-bar { height: 6px; background: #e2e8f0; border-radius: 3px; margin-top: 8px; }
+  .score-fill { height: 100%; border-radius: 3px; background: #48bb78; }
   .score-fill.danger { background: #e53e3e; }
   .score-fill.warning { background: #d69e2e; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 16px; }
-  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
-  th { color: #888; font-size: 12px; text-transform: uppercase; }
-  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .charts { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 24px; }
+  .chart-box { background: #f8fafc; border-radius: 8px; padding: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+  th { color: #718096; font-size: 11px; text-transform: uppercase; background: #f7fafc; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
   .tag.high { background: #fed7d7; color: #c53030; }
   .tag.medium { background: #fefcbf; color: #975a16; }
   .tag.low { background: #c6f6d5; color: #276749; }
-  .footer { margin-top: 24px; color: #aaa; font-size: 12px; text-align: center; }
+  .tag.overdue { background: #e53e3e; color: white; }
+  .footer { margin-top: 24px; color: #a0aec0; font-size: 12px; text-align: center; }
 </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
     <h1>数据质量看板</h1>
-    <span style="color:#888;">{{ stat_date }} | 自动扫描</span>
+    <span style="color:#718096;">{{ stat_date }} | 自动扫描</span>
   </div>
 
   <div class="kpi-row">
@@ -58,7 +64,7 @@
       <div class="l">高危 / 中危</div>
     </div>
     <div class="kpi">
-      <div class="v{% if summary.score_pct < 90 %} danger{% elif summary.score_pct < 95 %} warning{% endif %}">
+      <div class="v{% if summary.score_pct < 90 %} danger{% elif summary.score_pct < 95 %} warning{% else %} success{% endif %}">
         {{ "%.1f"|format(summary.score_pct) }}%
       </div>
       <div class="l">健康度</div>
@@ -67,9 +73,24 @@
              style="width:{{ summary.score_pct }}%"></div>
       </div>
     </div>
+    <div class="kpi">
+      <div class="v{% if summary.overdue_count > 0 %} danger{% endif %}">{{ summary.overdue_count }}</div>
+      <div class="l">SLA 超时</div>
+    </div>
   </div>
 
-  <h2 style="font-size:15px;margin-bottom:8px;">异常字段明细</h2>
+  <div class="charts">
+    <div class="chart-box">
+      <h2>评分趋势（近14天）</h2>
+      <canvas id="trendChart" height="120"></canvas>
+    </div>
+    <div class="chart-box">
+      <h2>严重程度分布</h2>
+      <canvas id="pieChart" height="160"></canvas>
+    </div>
+  </div>
+
+  <h2>异常字段明细</h2>
   <table>
     <thead>
       <tr>
@@ -80,6 +101,8 @@
         <th>阈值</th>
         <th>级别</th>
         <th>状态</th>
+        <th>负责人</th>
+        <th>检测时间</th>
       </tr>
     </thead>
     <tbody>
@@ -96,15 +119,61 @@
         </span>
       </td>
       <td>{{ a.status }}</td>
+      <td>{{ a.assignee or '—' }}</td>
+      <td>{{ a.detected_at }}</td>
     </tr>
     {% endfor %}
     {% if not anomalies %}
-    <tr><td colspan="7" style="color:#888;text-align:center;">✓ 无异常，数据质量良好</td></tr>
+    <tr><td colspan="9" style="color:#718096;text-align:center;">✓ 无异常，数据质量良好</td></tr>
     {% endif %}
     </tbody>
   </table>
 
   <div class="footer">FinBoss 数据质量监控 | {{ generated_at }}</div>
 </div>
+
+<script>
+const trendData = {{ trend_data | tojson }};
+const severityData = {{ severity_data | tojson }};
+
+const scoreColor = (score) => score < 90 ? 'rgba(229,62,62,0.8)' : score < 95 ? 'rgba(214,158,46,0.8)' : 'rgba(72,187,120,0.8)';
+
+new Chart(document.getElementById('trendChart'), {
+  type: 'line',
+  data: {
+    labels: trendData.map(p => p.stat_date),
+    datasets: [{
+      label: '健康度 (%)',
+      data: trendData.map(p => p.score_pct),
+      borderColor: 'rgba(66,153,225,0.8)',
+      backgroundColor: 'rgba(66,153,225,0.1)',
+      fill: true,
+      tension: 0.3,
+      pointBackgroundColor: trendData.map(p => scoreColor(p.score_pct)),
+      pointRadius: 4,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: { y: { min: 0, max: 100, title: { display: true, text: '%' } } }
+  }
+});
+
+new Chart(document.getElementById('pieChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['高危', '中危', '低危'],
+    datasets: [{
+      data: [severityData.high, severityData.medium, severityData.low],
+      backgroundColor: ['rgba(229,62,62,0.8)', 'rgba(214,158,46,0.8)', 'rgba(72,187,120,0.8)'],
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position: 'bottom' } }
+  }
+});
+</script>
 </body>
 </html>
