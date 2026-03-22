@@ -281,3 +281,58 @@ class TestQualityAPI:
             data = resp.json()
             assert data["email_sent"] == 2
             assert data["dingtalk_sent"] == 1
+
+    def test_analyze_anomaly_not_found(self, client):
+        """分析不存在的异常应返回 404"""
+        with patch(
+            "services.field_quality_service.FieldQualityService.analyze_anomaly"
+        ) as mock_analyze:
+            mock_analyze.return_value = None
+            resp = client.post("/api/v1/quality/anomalies/nonexistent-id/analyze")
+            assert resp.status_code == 404
+
+    def test_aggregated_anomalies_empty(self, client):
+        """空数据时聚合视图应返回空 groups"""
+        with patch(
+            "services.field_quality_service.FieldQualityService.get_aggregated_anomalies"
+        ) as mock_agg:
+            mock_agg.return_value = {
+                "groups": [],
+                "total_anomalies": 0,
+            }
+            resp = client.get("/api/v1/quality/anomalies/aggregated?group_by=table")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "groups" in data
+            assert "total_anomalies" in data
+            assert data["groups"] == []
+            assert data["total_anomalies"] == 0
+
+    def test_aggregated_anomalies_group_by_assignee(self, client):
+        """按 assignee 聚合应返回列表"""
+        with patch(
+            "services.field_quality_service.FieldQualityService.get_aggregated_anomalies"
+        ) as mock_agg:
+            mock_agg.return_value = {
+                "groups": [],
+                "total_anomalies": 0,
+            }
+            resp = client.get("/api/v1/quality/anomalies/aggregated?group_by=assignee")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert isinstance(data["groups"], list)
+
+    def test_aggregated_anomalies_multiple_dimensions(self, client):
+        """多维度组合聚合"""
+        with patch(
+            "services.field_quality_service.FieldQualityService.get_aggregated_anomalies"
+        ) as mock_agg:
+            mock_agg.return_value = {
+                "groups": [],
+                "total_anomalies": 0,
+            }
+            resp = client.get("/api/v1/quality/anomalies/aggregated?group_by=table,severity&status=open")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total_anomalies"] >= 0
+            assert "groups" in data
