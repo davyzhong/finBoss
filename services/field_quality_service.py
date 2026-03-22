@@ -498,7 +498,7 @@ class FieldQualityService:
 
     def send_quality_digest(self, stat_date: date | None = None) -> dict:
         """Send daily digest: always sends email + DingTalk if configured."""
-        from services.alert_service import AlertService
+        from services.quality_alert_service import QualityAlertService
         from api.config import get_settings
 
         stat_date = stat_date or date.today()
@@ -509,7 +509,7 @@ class FieldQualityService:
         email_cfg = settings.quality_email
         dingtalk_cfg = settings.quality_dingtalk
 
-        svc = AlertService()
+        svc = QualityAlertService()
         email_count = 0
         dingtalk_ok = False
 
