@@ -196,12 +196,33 @@ def _register_phase7a_jobs(scheduler: AsyncIOScheduler) -> None:
         except Exception as e:
             logger7.error(f"[Phase7A] Quality check failed: {e}", exc_info=True)
 
+    def daily_quality_digest_job() -> None:
+        """每日 07:00 发送质量摘要邮件/钉钉"""
+        import logging
+        logger8 = logging.getLogger(__name__)
+        try:
+            from services.field_quality_service import FieldQualityService
+            svc = FieldQualityService()
+            result = svc.send_quality_digest()
+            logger8.info(f"[Phase7B] Digest sent: email={result['email_sent']}, dingtalk={result['dingtalk_sent']}")
+        except Exception as e:
+            logger8.error(f"[Phase7B] Digest failed: {e}", exc_info=True)
+
     from apscheduler.triggers.cron import CronTrigger
+
     scheduler.add_job(
         daily_quality_job,
         CronTrigger(hour=6, minute=0),
         id="phase7a_daily_quality",
         name="数据质量每日检查",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        daily_quality_digest_job,
+        CronTrigger(hour=7, minute=0),
+        id="phase7b_quality_digest",
+        name="数据质量每日摘要",
         replace_existing=True,
     )
 
@@ -230,7 +251,7 @@ def start_scheduler() -> AsyncIOScheduler | None:
     _register_phase6_jobs(_scheduler)
     _register_phase7a_jobs(_scheduler)
     _scheduler.start()
-    logger.info("APScheduler 已启动，Phase 5 + Phase 6 + Phase 7A 调度任务已注册")
+    logger.info("APScheduler 已启动，Phase 5 + Phase 6 + Phase 7A + Phase 7B 调度任务已注册")
     return _scheduler
 
 
