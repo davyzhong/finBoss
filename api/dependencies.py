@@ -1,6 +1,6 @@
 """依赖注入"""
-from functools import lru_cache
 
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
@@ -9,12 +9,12 @@ from api.config import Settings, get_settings
 from services.ai import NLQueryService, RAGService
 from services.ai.attribution_service import AttributionService
 from services.alert_service import AlertService
+from services.ap_service import APService
 from services.clickhouse_service import ClickHouseDataService
 from services.customer360_service import Customer360Service
+from services.field_quality_service import FieldQualityService
 from services.quality_service import QualityService
 from services.salesperson_mapping_service import SalespersonMappingService
-from services.ap_service import APService
-from services.field_quality_service import FieldQualityService
 
 
 @lru_cache
@@ -77,6 +77,11 @@ def get_field_quality_service() -> FieldQualityService:
     return FieldQualityService()
 
 
+def get_api_keys() -> list[str]:
+    """获取允许的 API Key 列表"""
+    return get_settings().api_key.keys
+
+
 # 类型别名，方便路由使用
 ClickHouseServiceDep = Annotated[ClickHouseDataService, Depends(get_clickhouse_service)]
 QualityServiceDep = Annotated[QualityService, Depends(get_quality_service)]
@@ -86,6 +91,9 @@ NLQueryServiceDep = Annotated[NLQueryService, Depends(get_nl_query_service)]
 AttributionServiceDep = Annotated[AttributionService, Depends(get_attribution_service)]
 Customer360ServiceDep = Annotated[Customer360Service, Depends(get_customer360_service)]
 AlertServiceDep = Annotated[AlertService, Depends(get_alert_service)]
-SalespersonMappingServiceDep = Annotated[SalespersonMappingService, Depends(get_salesperson_mapping_service)]
+SalespersonMappingServiceDep = Annotated[
+    SalespersonMappingService, Depends(get_salesperson_mapping_service)
+]
 APServiceDep = Annotated[APService, Depends(get_ap_service)]
 FieldQualityServiceDep = Annotated[FieldQualityService, Depends(get_field_quality_service)]
+APIKeysDep = Annotated[list[str], Depends(get_api_keys)]

@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from api.config import get_settings
 from api.logging import JSONFormatter
+from api.middleware.auth import AuthMiddleware
 from api.routes import (
     ai,
     alerts,
@@ -60,6 +61,12 @@ def create_app() -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
+    )
+
+    # API Key 认证
+    app.add_middleware(
+        AuthMiddleware,
+        api_keys=settings.api_key.keys,
     )
 
     # Configure JSON logging for uvicorn
