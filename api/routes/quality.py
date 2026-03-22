@@ -1,4 +1,5 @@
 """数据质量 API 路由"""
+
 from datetime import date
 from typing import Annotated, Literal
 
@@ -27,8 +28,8 @@ async def get_quality_summary(service: FieldQualityServiceDep):
 @router.get("/reports")
 async def list_reports(
     service: FieldQualityServiceDep,
-    stat_date: date | None = Query(default=None),
-    limit: int = Query(default=50, le=500),
+    stat_date: date | None = None,
+    limit: int = Query(50, le=500),
 ):
     """质量报告列表"""
     stat_date = stat_date or date.today()
@@ -87,7 +88,9 @@ async def analyze_anomaly(
         suggestions=result["suggestions"],
         confidence=result["confidence"],
         model_used=result["model_used"],
-        analyzed_at=datetime.fromisoformat(result["analyzed_at"]) if result.get("analyzed_at") else datetime.now(),
+        analyzed_at=datetime.fromisoformat(result["analyzed_at"])
+        if result.get("analyzed_at")
+        else datetime.now(),
     )
 
 
@@ -132,6 +135,7 @@ async def send_quality_digest(service: FieldQualityServiceDep):
 async def trigger_check(service: FieldQualityServiceDep):
     """手动触发一次质量检查"""
     import time
+
     start = time.monotonic()
     result = service.check_all()
     service.send_feishu_card()

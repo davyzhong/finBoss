@@ -1,4 +1,5 @@
 """字段级数据质量检查服务"""
+
 import logging
 import uuid
 from datetime import date, datetime
@@ -18,16 +19,16 @@ class FieldQualityService:
     """字段级数据质量检查"""
 
     THRESHOLDS = {
-        "null_rate":       {"high": 0.20, "medium": 0.10},
-        "distinct_rate":   {"high": 0.999, "medium": 0.99},
-        "negative_rate":   {"high": 0.05, "medium": 0.02},
+        "null_rate": {"high": 0.20, "medium": 0.10},
+        "distinct_rate": {"high": 0.999, "medium": 0.99},
+        "negative_rate": {"high": 0.05, "medium": 0.02},
         "freshness_hours": {"high": 72, "medium": 48},
     }
 
     RATIO_METRICS = {"null_rate", "distinct_rate", "negative_rate"}
 
-    SLA_HIGH = 24.0    # hours
-    SLA_MEDIUM = 72.0   # hours
+    SLA_HIGH = 24.0  # hours
+    SLA_MEDIUM = 72.0  # hours
 
     def __init__(self, ch: ClickHouseDataService | None = None):
         self._ch = ch or ClickHouseDataService()
@@ -94,52 +95,77 @@ class FieldQualityService:
 
         # null_rate — all types
         rows = self._ch.execute_query(
-            f"SELECT countIf({qcol} IS NULL) / count() AS v "
-            f"FROM {table_name} WHERE {filter_clause}"
+            f"SELECT countIf({qcol} IS NULL) / count() AS v FROM {table_name} WHERE {filter_clause}"
         )
         null_rate = float(rows[0]["v"]) if rows else 0.0
         t = self.THRESHOLDS["null_rate"]
         if null_rate > t["high"]:
-            anomalies.append(self._make_anomaly(table_name, column_name, "null_rate", null_rate, t["high"], "高"))
+            anomalies.append(
+                self._make_anomaly(table_name, column_name, "null_rate", null_rate, t["high"], "高")
+            )
         elif null_rate > t["medium"]:
-            anomalies.append(self._make_anomaly(table_name, column_name, "null_rate", null_rate, t["medium"], "中"))
+            anomalies.append(
+                self._make_anomaly(
+                    table_name, column_name, "null_rate", null_rate, t["medium"], "中"
+                )
+            )
 
         # distinct_rate — all types
         rows = self._ch.execute_query(
-            f"SELECT uniqExact({qcol}) / count() AS v "
-            f"FROM {table_name} WHERE {filter_clause}"
+            f"SELECT uniqExact({qcol}) / count() AS v FROM {table_name} WHERE {filter_clause}"
         )
         distinct_rate = float(rows[0]["v"]) if rows else 0.0
         t = self.THRESHOLDS["distinct_rate"]
         if distinct_rate > t["high"]:
-            anomalies.append(self._make_anomaly(table_name, column_name, "distinct_rate", distinct_rate, t["high"], "中"))
+            anomalies.append(
+                self._make_anomaly(
+                    table_name, column_name, "distinct_rate", distinct_rate, t["high"], "中"
+                )
+            )
         elif distinct_rate > t["medium"]:
-            anomalies.append(self._make_anomaly(table_name, column_name, "distinct_rate", distinct_rate, t["medium"], "低"))
+            anomalies.append(
+                self._make_anomaly(
+                    table_name, column_name, "distinct_rate", distinct_rate, t["medium"], "低"
+                )
+            )
 
         # negative_rate — numeric types only
         if self._should_check_negative_rate(col_type):
             rows = self._ch.execute_query(
-                f"SELECT countIf({qcol} < 0) / count() AS v "
-                f"FROM {table_name} WHERE {filter_clause}"
+                f"SELECT countIf({qcol} < 0) / count() AS v FROM {table_name} WHERE {filter_clause}"
             )
             neg = float(rows[0]["v"]) if rows else 0.0
             t = self.THRESHOLDS["negative_rate"]
             if neg > t["high"]:
-                anomalies.append(self._make_anomaly(table_name, column_name, "negative_rate", neg, t["high"], "高"))
+                anomalies.append(
+                    self._make_anomaly(
+                        table_name, column_name, "negative_rate", neg, t["high"], "高"
+                    )
+                )
             elif neg > t["medium"]:
-                anomalies.append(self._make_anomaly(table_name, column_name, "negative_rate", neg, t["medium"], "中"))
+                anomalies.append(
+                    self._make_anomaly(
+                        table_name, column_name, "negative_rate", neg, t["medium"], "中"
+                    )
+                )
 
         # freshness_hours — all types, only if table has etl_time
         if self._has_etl_time(table_name):
-            rows = self._ch.execute_query(
-                f"SELECT now() - MAX(etl_time) AS v FROM {table_name}"
-            )
+            rows = self._ch.execute_query(f"SELECT now() - MAX(etl_time) AS v FROM {table_name}")
             hours = float(rows[0]["v"]) if rows else 0.0
             t = self.THRESHOLDS["freshness_hours"]
             if hours > t["high"]:
-                anomalies.append(self._make_anomaly(table_name, column_name, "freshness_hours", hours, t["high"], "中"))
+                anomalies.append(
+                    self._make_anomaly(
+                        table_name, column_name, "freshness_hours", hours, t["high"], "中"
+                    )
+                )
             elif hours > t["medium"]:
-                anomalies.append(self._make_anomaly(table_name, column_name, "freshness_hours", hours, t["medium"], "低"))
+                anomalies.append(
+                    self._make_anomaly(
+                        table_name, column_name, "freshness_hours", hours, t["medium"], "低"
+                    )
+                )
 
         return anomalies
 
@@ -147,8 +173,13 @@ class FieldQualityService:
         return any(col_type.startswith(p) for p in ("Int", "UInt", "Float", "Decimal"))
 
     def _make_anomaly(
-        self, table_name: str, column_name: str,
-        metric: str, value: float, threshold: float, severity: str,
+        self,
+        table_name: str,
+        column_name: str,
+        metric: str,
+        value: float,
+        threshold: float,
+        severity: str,
     ) -> dict[str, Any]:
         return {
             "id": str(uuid.uuid4()),
@@ -175,7 +206,8 @@ class FieldQualityService:
         all_anomalies: list[dict] = []
         table_scores: list[float] = []
 
-        for table_name in tables:
+        for row in tables:
+            table_name = f"{row['database']}.{row['name']}"
             try:
                 cols = self.list_columns(table_name)
                 normal_count = 0
@@ -212,6 +244,7 @@ class FieldQualityService:
         overall_score = sum(table_scores) / len(table_scores) if table_scores else 100.0
         # 自动分析高危未分析异常
         from api.config import get_settings
+
         if get_settings().ai_analysis.auto_analyze_high_severity:
             unanalyzed = self._ch.execute_query(
                 "SELECT id FROM dm.quality_anomalies "
@@ -279,9 +312,9 @@ class FieldQualityService:
         rows = self._ch.execute_query(
             "SELECT stat_date, avg(score_pct) AS score "
             "FROM dm.quality_reports "
-            "WHERE stat_date < toDate('{sd}') "
+            f"WHERE stat_date < toDate('{stat_date.isoformat()}') "
             "GROUP BY stat_date "
-            "ORDER BY stat_date DESC LIMIT 2".format(sd=stat_date.isoformat())
+            "ORDER BY stat_date DESC LIMIT 2"
         )
         if len(rows) < 2:
             return "stable →"
@@ -319,20 +352,26 @@ class FieldQualityService:
         )
         result = []
         for r in rows:
-            d = r["stat_date"].isoformat() if hasattr(r["stat_date"], "isoformat") else str(r["stat_date"])
+            d = (
+                r["stat_date"].isoformat()
+                if hasattr(r["stat_date"], "isoformat")
+                else str(r["stat_date"])
+            )
             score = round(r.get("score_pct") or 100.0, 2)
             anom_rows = self._ch.execute_query(
                 f"SELECT severity, count() AS cnt FROM dm.quality_anomalies "
                 f"WHERE stat_date = '{d}' AND status = 'open' GROUP BY severity"
             )
             sev = {row["severity"]: row["cnt"] for row in anom_rows}
-            result.append({
-                "stat_date": d,
-                "score_pct": score,
-                "anomaly_count": r.get("anomaly_count") or 0,
-                "high_severity": sev.get("高", 0),
-                "medium_severity": sev.get("中", 0),
-            })
+            result.append(
+                {
+                    "stat_date": d,
+                    "score_pct": score,
+                    "anomaly_count": r.get("anomaly_count") or 0,
+                    "high_severity": sev.get("高", 0),
+                    "medium_severity": sev.get("中", 0),
+                }
+            )
         return result
 
     def list_reports(self, stat_date: date, limit: int = 50) -> list[dict]:
@@ -343,7 +382,9 @@ class FieldQualityService:
         )
 
     def get_report(self, report_id: str) -> dict | None:
-        rows = self._ch.execute_query(f"SELECT * FROM dm.quality_reports WHERE id = '{report_id}' LIMIT 1")
+        rows = self._ch.execute_query(
+            f"SELECT * FROM dm.quality_reports WHERE id = '{report_id}' LIMIT 1"
+        )
         return rows[0] if rows else None
 
     def list_anomalies_by_report(self, report_id: str) -> list[dict]:
@@ -353,7 +394,9 @@ class FieldQualityService:
             f"ORDER BY severity DESC, detected_at DESC"
         )
 
-    def list_anomalies(self, status: str | None, limit: int = 100, assignee: str | None = None) -> list[dict]:
+    def list_anomalies(
+        self, status: str | None, limit: int = 100, assignee: str | None = None
+    ) -> list[dict]:
         where_parts: list[str] = []
         if status:
             where_parts.append(f"status = '{status}'")
@@ -376,7 +419,9 @@ class FieldQualityService:
             f"ORDER BY severity DESC, detected_at DESC LIMIT {limit}"
         )
 
-    def update_anomaly(self, anomaly_id: str, status: str | None = None, assignee: str | None = None) -> None:
+    def update_anomaly(
+        self, anomaly_id: str, status: str | None = None, assignee: str | None = None
+    ) -> None:
         safe_id = anomaly_id.replace("'", "''")
         parts: list[str] = []
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -384,7 +429,9 @@ class FieldQualityService:
         if status is not None:
             if status not in ("resolved", "ignored"):
                 raise ValueError(f"Invalid status: {status}")
-            resolved_at = f"'{now_str}'" if status == "resolved" else "toDateTime('1970-01-01 00:00:00')"
+            resolved_at = (
+                f"'{now_str}'" if status == "resolved" else "toDateTime('1970-01-01 00:00:00')"
+            )
             parts.append(f"status = '{status}', resolved_at = {resolved_at}")
         if assignee is not None:
             safe_assignee = assignee.replace("'", "''")
@@ -445,8 +492,8 @@ class FieldQualityService:
     # ------------------------------------------------------------------
 
     def send_feishu_card(self, stat_date: date | None = None) -> None:
-        from services.feishu.feishu_client import FeishuClient
         from api.config import get_settings
+        from services.feishu.feishu_client import FeishuClient
 
         summary = self.get_summary(stat_date)
         if summary["anomaly_count"] == 0:
@@ -490,30 +537,38 @@ class FieldQualityService:
                 f"- `{a['table_name']}.{a['column_name']}` — {a['metric']} {fmt_val(a['metric'], a['value'])}（阈值 {fmt_val(a['metric'], a['threshold'])})"
                 for a in high
             )
-            card["elements"].append({"tag": "markdown", "content": f"**高危（{len(high)}）**\n{lines}"})
+            card["elements"].append(
+                {"tag": "markdown", "content": f"**高危（{len(high)}）**\n{lines}"}
+            )
         if medium:
             lines = "\n".join(
                 f"- `{a['table_name']}.{a['column_name']}` — {a['metric']} {fmt_val(a['metric'], a['value'])}（阈值 {fmt_val(a['metric'], a['threshold'])})"
                 for a in medium
             )
-            card["elements"].append({"tag": "markdown", "content": f"**中危（{len(medium)}）**\n{lines}"})
+            card["elements"].append(
+                {"tag": "markdown", "content": f"**中危（{len(medium)}）**\n{lines}"}
+            )
 
-        card["elements"].append({
-            "tag": "action",
-            "actions": [{
-                "tag": "button",
-                "text": {"tag": "plain_text", "content": "查看看板"},
-                "type": "primary",
-                "url": "/static/reports/quality_report_latest.html",
-            }],
-        })
+        card["elements"].append(
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "查看看板"},
+                        "type": "primary",
+                        "url": "/static/reports/quality_report_latest.html",
+                    }
+                ],
+            }
+        )
 
         client.send_card_to_channel(card, channel_id=channel_id)
 
     def send_quality_digest(self, stat_date: date | None = None) -> dict:
         """Send daily digest: always sends email + DingTalk if configured."""
-        from services.quality_alert_service import QualityAlertService
         from api.config import get_settings
+        from services.quality_alert_service import QualityAlertService
 
         stat_date = stat_date or date.today()
         summary = self.get_summary(stat_date)
@@ -555,8 +610,7 @@ class FieldQualityService:
         from services.ai_analysis_service import AIGenAnalysisService
 
         rows = self._ch.execute_query(
-            "SELECT * FROM dm.quality_anomalies WHERE id = %(id)s LIMIT 1",
-            {"id": anomaly_id}
+            "SELECT * FROM dm.quality_anomalies WHERE id = %(id)s LIMIT 1", {"id": anomaly_id}
         )
         if not rows:
             return None
@@ -606,7 +660,7 @@ class FieldQualityService:
                 "root_cause": result["root_cause"],
                 "analyzed_at": now,
                 "model_used": result["model_used"],
-            }
+            },
         )
 
         result["anomaly_id"] = anomaly_id
@@ -631,7 +685,7 @@ class FieldQualityService:
             # 级别过滤：min_severity="中" 时只显示 severity in ("高","中")
             sev_order = ["高", "中", "低"]
             min_idx = sev_order.index(min_severity)
-            relevant_levels = sev_order[:min_idx + 1]
+            relevant_levels = sev_order[: min_idx + 1]
             sev_conditions = " OR ".join(
                 f"severity = %(sev_{i})" for i, _ in enumerate(relevant_levels)
             )
@@ -695,15 +749,19 @@ class FieldQualityService:
                 g["oldest_age_days"] = age_days
 
             if len(g["items"]) < limit:
-                g["items"].append({
-                    "id": row["id"],
-                    "table_name": row["table_name"],
-                    "column_name": row["column_name"],
-                    "severity": row["severity"],
-                    "status": row["status"],
-                    "assignee": row["assignee"] or "",
-                    "created_at": detected.date().isoformat() if hasattr(detected, "date") else str(detected)[:10],
-                })
+                g["items"].append(
+                    {
+                        "id": row["id"],
+                        "table_name": row["table_name"],
+                        "column_name": row["column_name"],
+                        "severity": row["severity"],
+                        "status": row["status"],
+                        "assignee": row["assignee"] or "",
+                        "created_at": detected.date().isoformat()
+                        if hasattr(detected, "date")
+                        else str(detected)[:10],
+                    }
+                )
 
         groups = list(groups_map.values())
         total = sum(g["total"] for g in groups)

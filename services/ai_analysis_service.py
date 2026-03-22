@@ -1,4 +1,5 @@
 """AI 根因分析服务"""
+
 import json
 import logging
 from typing import Any
@@ -34,6 +35,7 @@ class AIGenAnalysisService:
     ):
         # 延迟导入避免循环依赖
         from api.config import get_settings
+
         settings = get_settings()
         cfg = settings.ai_analysis
 
@@ -79,7 +81,7 @@ class AIGenAnalysisService:
         # 去除 markdown code fence
         for fence in ("```json", "```JSON", "```"):
             if text.startswith(fence):
-                text = text[len(fence):]
+                text = text[len(fence) :]
             if text.endswith(fence):
                 text = text[: -len(fence)]
         text = text.strip()
@@ -117,6 +119,7 @@ class AIGenAnalysisService:
 
     def _call_ollama(self, prompt: str) -> str:
         from services.ai.ollama_service import OllamaService
+
         svc = OllamaService(model=self._default_model)
         result = svc.generate(prompt)
         return result

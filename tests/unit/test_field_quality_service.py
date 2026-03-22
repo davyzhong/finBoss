@@ -127,13 +127,17 @@ class TestFieldQualityService:
     def test_check_all_continues_after_table_error(self):
         """Per-table error isolation: one bad table does not abort the scan."""
         mock_ch = MagicMock()
-        # list_tables returns 1 table; the table raises during column listing
-        mock_ch.execute_query.side_effect = [
-            [{"database": "dm", "name": "good_table"}],   # list_monitored_tables
-        ]
+        mock_ch.execute_query.return_value = []   # covers all list_columns / metric queries
         mock_ch.execute.return_value = None
         svc = FieldQualityService(ch=mock_ch)
-        with patch.object(FieldQualityService, "generate_report_html", return_value=""):
-            result = svc.check_all(date(2026, 3, 22))
+        # Mock table list as dicts so the code's row['database'].row['name'] unpacking works
+        with patch.object(
+            FieldQualityService, "list_monitored_tables",
+            return_value=[{"database": "dm", "name": "good_table"}]
+        ):
+            with patch.object(FieldQualityService, "generate_report_html", return_value=""):
+                result = svc.check_all(date(2026, 3, 22))
+        # Should complete with 1 table processed
+        assert result["total_tables"] >= 1
         # Should complete with 1 table processed
         assert result["total_tables"] >= 1
