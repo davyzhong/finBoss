@@ -199,6 +199,59 @@ class APConfig(BaseSettings):
     )
 
 
+class QualityEmailConfig(BaseSettings):
+    """数据质量邮件告警配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="quality_email_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    smtp_host: str = Field(default="smtp.example.com", description="SMTP 主机")
+    smtp_port: int = Field(default=587, description="SMTP 端口")
+    smtp_user: str = Field(default="", description="SMTP 用户名")
+    smtp_password: str = Field(default="", description="SMTP 密码")
+    from_addr: str = Field(default="finboss@example.com", description="发件人地址")
+    to_addrs: list[str] = Field(default=[], description="收件人列表")
+
+    @field_validator("to_addrs", mode="before")
+    @classmethod
+    def _parse_to_addrs(cls, v):
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v or []
+
+
+class QualityDingTalkConfig(BaseSettings):
+    """数据质量钉钉告警配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="quality_dingtalk_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    webhook_url: str = Field(default="", description="钉钉自定义机器人 Webhook URL")
+
+
+class QualityAlertConfig(BaseSettings):
+    """数据质量告警总配置（聚合 Email + DingTalk）"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="quality_alert_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    email_enabled: bool = Field(default=True, description="启用邮件告警")
+    dingtalk_enabled: bool = Field(default=False, description="启用钉钉告警")
+    digest_time: str = Field(default="07:00", description="每日摘要发送时间 (HH:MM)")
+
+
 class Settings(BaseSettings):
     """全局配置"""
 
@@ -219,6 +272,9 @@ class Settings(BaseSettings):
     milvus: MilvusConfig = Field(default_factory=MilvusConfig)
     feishu: FeishuConfig = Field(default_factory=FeishuConfig)
     ap: APConfig = Field(default_factory=APConfig)
+    quality_email: QualityEmailConfig = Field(default_factory=QualityEmailConfig)
+    quality_dingtalk: QualityDingTalkConfig = Field(default_factory=QualityDingTalkConfig)
+    quality_alert: QualityAlertConfig = Field(default_factory=QualityAlertConfig)
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> "Settings":
