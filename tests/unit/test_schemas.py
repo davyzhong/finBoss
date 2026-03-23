@@ -4,6 +4,7 @@ from datetime import datetime
 
 from schemas.dm.ar import DMARSummary
 from schemas.std.ar import StdARRecord
+from schemas.user import Role, RolePermission, User
 
 
 class TestStdARRecord:
@@ -95,3 +96,33 @@ class TestDMARSummary:
 
         assert summary.overdue_rate == 0.25
         assert summary.total_count == 20
+
+
+class TestUserSchema:
+    """用户 Schema 测试"""
+
+    def test_user_schema(self):
+        """测试 User 模型"""
+        u = User(
+            user_id="u1",
+            external_id="ext1",
+            provider="feishu",
+            name="张三",
+            email="z@test.com",
+            role="admin",
+        )
+        assert u.user_id == "u1"
+        assert u.is_active is True
+
+    def test_role_schema(self):
+        """测试 Role 模型"""
+        r = Role(role_id="admin", role_name="管理员", desc="系统管理员")
+        assert r.role_id == "admin"
+
+    def test_role_permission_schema(self):
+        """测试 RolePermission 模型"""
+        rp = RolePermission(
+            role_id="admin", module="ar", can_read=True, can_write=True
+        )
+        assert rp.can_read is True
+        assert rp.can_write is True

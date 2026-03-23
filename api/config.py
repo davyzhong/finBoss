@@ -301,6 +301,56 @@ class APIKeyConfig(BaseSettings):
         return self._keys
 
 
+class FeishuOAuthConfig(BaseSettings):
+    """飞书 OAuth 配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="feishu_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    app_id: str = Field(default="", description="飞书应用 App ID")
+    app_secret: str = Field(default="", description="飞书应用 App Secret")
+    redirect_uri: str = Field(default="", description="OAuth 回调地址")
+    scope: str = Field(
+        default="contact:user.avatar:readonly contact:user.email:readonly",
+        description="权限范围",
+    )
+
+
+class DingTalkOAuthConfig(BaseSettings):
+    """钉钉 OAuth 配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="dingtalk_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    app_id: str = Field(default="", description="钉钉应用 AppKey")
+    app_secret: str = Field(default="", description="钉钉应用 AppSecret")
+    redirect_uri: str = Field(default="", description="OAuth 回调地址")
+
+
+class WeComOAuthConfig(BaseSettings):
+    """企业微信 OAuth 配置"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="wecom_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    corp_id: str = Field(default="", description="企业 ID")
+    corp_secret: str = Field(default="", description="企业微信应用 Secret")
+    agent_id: str = Field(default="", description="应用 AgentID")
+    redirect_uri: str = Field(default="", description="OAuth 回调地址")
+
+
 class Settings(BaseSettings):
     """全局配置"""
 
@@ -326,6 +376,9 @@ class Settings(BaseSettings):
     quality_alert: QualityAlertConfig = Field(default_factory=QualityAlertConfig)
     ai_analysis: AIAnalysisConfig = Field(default_factory=AIAnalysisConfig)
     api_key: APIKeyConfig = Field(default_factory=APIKeyConfig)
+    feishu_oauth: FeishuOAuthConfig = Field(default_factory=FeishuOAuthConfig)
+    dingtalk_oauth: DingTalkOAuthConfig = Field(default_factory=DingTalkOAuthConfig)
+    wecom_oauth: WeComOAuthConfig = Field(default_factory=WeComOAuthConfig)
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> "Settings":
