@@ -53,6 +53,8 @@ def path_to_module(path: str) -> str | None:
         return "quality"
     if path.startswith("/api/v1/admin"):
         return "admin"
+    if path.startswith("/admin"):
+        return "admin"
     return None
 
 

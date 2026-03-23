@@ -2,6 +2,7 @@
 """pytest 配置和 fixtures"""
 import os
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 from factory.random import reseed_random
@@ -52,6 +53,16 @@ def clear_service_caches():
     ):
         fn.cache_clear()
     session_store.clear()
+
+
+@pytest.fixture
+def bypass_session_middleware():
+    """Bypass SessionMiddleware for tests using API key auth."""
+    async def fake_call(self, scope, receive, send):
+        await self.app(scope, receive, send)
+
+    with patch.object(SessionMiddleware, "__call__", fake_call):
+        yield
 
 
 @pytest.fixture
