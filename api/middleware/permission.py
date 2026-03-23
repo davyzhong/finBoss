@@ -1,4 +1,3 @@
-from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -24,7 +23,7 @@ ROLE_PERMISSIONS = {
     "ops": {
         "ar": {"read": False, "write": False},
         "ap": {"read": False, "write": False},
-        "reports": {"read": True, "write": False},
+        "reports": {"read": True, "write": True},
         "alerts": {"read": True, "write": True},
         "quality": {"read": True, "write": True},
         "admin": {"read": False, "write": False},

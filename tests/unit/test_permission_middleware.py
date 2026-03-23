@@ -23,6 +23,10 @@ def test_ops_cannot_access_ar():
     assert ROLE_PERMISSIONS["ops"]["ar"]["write"] is False
 
 
+def test_ops_can_write_reports():
+    assert ROLE_PERMISSIONS["ops"]["reports"]["write"] is True
+
+
 async def test_forbidden_returns_403():
     scope = {
         "type": "http",
