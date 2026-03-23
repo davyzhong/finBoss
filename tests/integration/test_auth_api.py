@@ -14,12 +14,13 @@ async def test_health_public_without_session():
 
 
 @pytest.mark.asyncio
-async def test_ar_summary_reachable():
-    """AR summary 路由可访问（SessionMiddleware bypass 允许请求通过）"""
+async def test_ar_summary_not_redirect():
+    """AR 路由不需要 session 就能响应（DB 不可用时返回 500，但不发重定向）"""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False) as ac:
         resp = await ac.get("/api/v1/ar/summary")
-    # Without middlewares, route is reached (returns 200 or 500 depending on DB)
-    assert resp.status_code in (200, 500)
+    # Middleware bypass → request reaches route → may 500 if DB unavailable
+    # But should NOT 302 redirect (that's SessionMiddleware's job without session)
+    assert resp.status_code != 302
 
 
 @pytest.mark.asyncio

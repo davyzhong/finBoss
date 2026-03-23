@@ -18,7 +18,7 @@ ORDER BY user_id;
 CREATE TABLE IF NOT EXISTS dm.roles (
     role_id     String,
     role_name   String,
-    desc        String DEFAULT '',
+    `desc`     String DEFAULT '',
     created_at  DateTime DEFAULT now()
 ) ENGINE = ReplacingMergeTree(created_at)
 ORDER BY role_id;

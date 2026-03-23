@@ -20,8 +20,8 @@ def run_ddl(client: Client):
                 client.execute(stmt)
                 print(f"  OK: {stmt[:60]}")
             except Exception as e:
-                code = str(e).split()[-1].strip("()")
-                if code == "42":
+                err = str(e)
+                if "Code: 57" in err or "already exists" in err.lower():
                     print(f"  SKIP (exists): {stmt[:60]}")
                 else:
                     raise
@@ -36,12 +36,17 @@ def run_ddl(client: Client):
     for role_id, role_name, desc in roles:
         try:
             client.execute(
-                "INSERT INTO dm.roles (role_id, role_name, desc) VALUES",
+                "INSERT INTO dm.roles (role_id, role_name, `desc`) VALUES",
                 [{"role_id": role_id, "role_name": role_name, "desc": desc}],
             )
             print(f"  INSERT role: {role_id}")
-        except Exception:
-            pass  # 已存在
+        except Exception as e:
+            err = str(e)
+            # ClickHouse "already exists" error codes: 57, 253
+            if "57" in err or "Code: 57" in err or "Code: 253" in err or "already exists" in err.lower():
+                print(f"  SKIP (exists): {stmt[:60]}")
+            else:
+                raise
 
     print("Phase 8 init complete.")
 
