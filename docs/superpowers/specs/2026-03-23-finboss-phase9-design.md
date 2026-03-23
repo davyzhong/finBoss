@@ -140,7 +140,7 @@ Collection: `knowledge_docs`（与现有 RAG 共用 collection）
 | GET | `/ai/copilot/conversations` | 列出用户会话列表 |
 | POST | `/ai/copilot/conversations` | 创建新会话 |
 | GET | `/ai/copilot/conversations/{id}` | 获取会话详情（包含消息历史） |
-| DELETE | `/ai/copilot/conversations/{id}` | 删除会话 |
+| DELETE | `/ai/copilot/conversations/{id}` | 删除会话（仅会话所有者可删除） |
 | POST | `/ai/copilot/conversations/{id}/messages` | 发送消息（多路并行处理） |
 
 ### 归因案例
@@ -224,11 +224,11 @@ async def process_message(user_id: str, role: str, content: str, history: list) 
 ### RBAC 数据范围注入
 
 ```python
-def build_sql_filter(user_id: str, role: str) -> str:
-    """SQL 查询时注入数据范围过滤"""
+def build_sql_filter(user_id: str, role: str) -> tuple[str, dict]:
+    """SQL 查询时注入数据范围过滤（参数化查询，防注入）"""
     if role == "sales_manager":
-        return f"AND salesperson_id = '{user_id}'"
-    return ""  # finance / admin 全量
+        return ("AND salesperson_id = %(salesperson_id)s", {"salesperson_id": user_id})
+    return ("", {})  # finance / admin 全量
 ```
 
 ---
@@ -301,7 +301,8 @@ def build_sql_filter(user_id: str, role: str) -> str:
 ## 8. 权限与 RBAC
 
 - 所有 `/ai/copilot/*` 端点需要有效 session（Phase 8 SessionMiddleware）
-- Phase 8 RBAC 权限矩阵覆盖：
+- Phase 8 PermissionMiddleware 需更新，新增 AI 助手模块覆盖 `/ai/copilot` 路由前缀
+- Phase 8 RBAC 权限矩阵扩展如下：
 
 | 模块 | 路由前缀 | 财务 | 销售经理 | 运营 | 管理员 |
 |------|----------|------|----------|------|--------|
@@ -321,6 +322,7 @@ def build_sql_filter(user_id: str, role: str) -> str:
 | `services/ai/conversation_service.py` | 新建 — 会话 CRUD + 消息持久化 |
 | `services/ai/case_service.py` | 新建 — 归因案例管理 + Milvus 同步 |
 | `api/routes/copilot.py` | 新建 — `/ai/copilot/*` 全部端点 |
+| `api/middleware/permission.py` | 修改 — 权限矩阵新增 AI 助手模块覆盖 |
 | `api/main.py` | 注册 copilot_router |
 | `scripts/phase9_ddl.sql` | 新建 — ai_conversations / ai_messages / attribution_cases DDL |
 | `scripts/init_phase9.py` | 新建 — 幂等初始化脚本 |
