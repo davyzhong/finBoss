@@ -12,6 +12,7 @@ def test_get_authorization_url():
         assert "open.weixin.qq.com/connect/oauth2/authorize" in url
         assert "appid=ww_test" in url
         assert "agentid=100000" in url
+        assert "#wechat_redirect" in url
 
 
 def test_parse_user_info():

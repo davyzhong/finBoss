@@ -32,6 +32,8 @@ class WeComOAuthProvider(OAuthProvider):
             )
             token_resp.raise_for_status()
             token_data = token_resp.json()
+            if token_data.get("errcode", 0) != 0:
+                raise Exception(f"WeCom token error: errcode={token_data.get('errcode')}, errmsg={token_data.get('errmsg', '')}")
             access_token = token_data.get("access_token", "")
 
             user_resp = client.get(
@@ -39,7 +41,10 @@ class WeComOAuthProvider(OAuthProvider):
                 params={"access_token": access_token, "code": code},
             )
             user_resp.raise_for_status()
-            return user_resp.json()
+            user_data = user_resp.json()
+            if user_data.get("errcode", 0) != 0:
+                raise Exception(f"WeCom userinfo error: errcode={user_data.get('errcode')}, errmsg={user_data.get('errmsg', '')}")
+            return user_data
 
     def get_user_info(self, access_token: str) -> OAuthUserInfo:
         return OAuthUserInfo(external_id="", provider="wecom", name="", email="")

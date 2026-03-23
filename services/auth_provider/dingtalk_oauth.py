@@ -30,6 +30,8 @@ class DingTalkOAuthProvider(OAuthProvider):
             )
             resp.raise_for_status()
             token_data = resp.json()
+            if token_data.get("errcode", 0) != 0:
+                raise Exception(f"DingTalk token error: errcode={token_data.get('errcode')}, errmsg={token_data.get('errmsg', '')}")
             access_token = token_data.get("access_token", "")
 
             user_resp = client.post(
@@ -37,7 +39,10 @@ class DingTalkOAuthProvider(OAuthProvider):
                 json={"access_token": access_token, "code": code},
             )
             user_resp.raise_for_status()
-            return user_resp.json()
+            user_data = user_resp.json()
+            if user_data.get("errcode", 0) != 0:
+                raise Exception(f"DingTalk userinfo error: errcode={user_data.get('errcode')}, errmsg={user_data.get('errmsg', '')}")
+            return user_data
 
     def get_user_info(self, access_token: str) -> OAuthUserInfo:
         return OAuthUserInfo(external_id="", provider="dingtalk", name="", email="")
