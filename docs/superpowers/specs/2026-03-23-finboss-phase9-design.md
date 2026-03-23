@@ -77,7 +77,7 @@
 CREATE TABLE IF NOT EXISTS dm.ai_conversations (
     conversation_id  String,
     user_id          String,
-    role             String,
+    role             String,         -- 用户角色: sales_manager | finance | admin | ops
     title            String DEFAULT '',
     message_count    UInt16 DEFAULT 0,
     created_at       DateTime DEFAULT now(),
@@ -108,9 +108,10 @@ CREATE TABLE IF NOT EXISTS dm.attribution_cases (
     milvus_doc_id      String,
     created_by         String,
     is_visible         UInt8  DEFAULT 1,
-    created_at         DateTime DEFAULT now()
-) ENGINE = ReplacingMergeTree(created_at)
-ORDER BY (case_id, created_at);
+    created_at         DateTime DEFAULT now(),
+    updated_at         DateTime DEFAULT now()
+) ENGINE = ReplacingMergeTree(updated_at)
+ORDER BY (case_id, updated_at);
 ```
 
 ### Milvus Schema
@@ -350,5 +351,8 @@ def build_sql_filter(user_id: str, role: str) -> tuple[str, dict]:
 - LLM 调用超时：60s；各子任务超时：30s
 - Milvus 语义检索结果窗口：top_k=5
 - 对话历史窗口：20 条消息，防止 prompt 溢出
-- 归因案例 Milvus 同步为同步写入，失败则回滚 ClickHouse 记录
+- 归因案例 Milvus 同步为同步写入，失败则回滚：
+  - Milvus 写入失败 → 不写入 ClickHouse，直接返回错误
+  - ClickHouse 写入成功但 `milvus_doc_id` 更新失败 → 删除已写入的 Milvus 文档，确保一致性
+- 归因案例 `is_visible` 默认 1（所有登录用户可见），不支持私密草稿状态
 - 内存 Session 限制：Phase 8 的 in-memory session；多 worker 部署需 Redis
