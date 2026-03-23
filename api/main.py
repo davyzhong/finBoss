@@ -21,6 +21,7 @@ from api.middleware.auth import AuthMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
 from api.middleware.tracing import TracingMiddleware
 from api.routes import (
+    admin,
     ai,
     alerts,
     ap,
@@ -182,6 +183,7 @@ def create_app() -> FastAPI:
     app.include_router(ap.router, prefix="/api/v1/ap", tags=["AP管理"])
     app.include_router(quality.router, prefix="/api/v1/quality", tags=["数据质量"])
     app.include_router(auth.router, prefix="/auth", tags=["认证"])
+    app.include_router(admin.router, tags=["系统管理"])
 
     # 挂载静态文件目录用于报告页面（隔离到 /static/reports 避免与根 /static 冲突）
     from pathlib import Path
