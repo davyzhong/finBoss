@@ -7,11 +7,12 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from api.config import get_settings
-from services.auth_provider.feishu_oauth import FeishuOAuthProvider
 from services.auth_provider.dingtalk_oauth import DingTalkOAuthProvider
+from services.auth_provider.feishu_oauth import FeishuOAuthProvider
 from services.auth_provider.wecom_oauth import WeComOAuthProvider
-from services.session_service import session_store as _global_session_store, InMemorySessionStore
 from services.clickhouse_service import ClickHouseDataService
+from services.session_service import InMemorySessionStore
+from services.session_service import session_store as _global_session_store
 
 router = APIRouter(tags=["认证"])
 
@@ -131,6 +132,7 @@ async def callback(
         httponly=True,
         samesite="lax",
         max_age=8 * 3600,
+        secure=not get_settings().app.debug,
     )
     return response
 
@@ -141,8 +143,8 @@ async def logout(request: Request, response: Response):
     session_id = request.cookies.get("finboss_session", "")
     if session_id:
         _global_session_store.pop(session_id, None)
-    response = Response(status_code=200)
-    response.delete_cookie("finboss_session")
+    resp = Response(status_code=200)
+    resp.delete_cookie("finboss_session")
     return {"success": True}
 
 
