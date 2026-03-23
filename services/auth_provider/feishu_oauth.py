@@ -39,7 +39,12 @@ class FeishuOAuthProvider(OAuthProvider):
                 json={"grant_type": "authorization_code", "code": code},
             )
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            # Check Feishu-level error codes
+            feishu_code = data.get("code", 0)
+            if feishu_code != 0:
+                raise Exception(f"Feishu OAuth error: code={feishu_code}, msg={data.get('msg', '')}")
+            return data
 
     def get_user_info(self, access_token: str) -> OAuthUserInfo:
         with httpx.Client(timeout=10) as client:
