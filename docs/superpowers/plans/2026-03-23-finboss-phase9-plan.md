@@ -1122,10 +1122,8 @@ class CopilotService:
         return matched or ["mixed"]
 
     def build_sql_filter(self, user_id: str, role: str) -> tuple[str, dict]:
-        """SQL 查询时注入数据范围过滤（参数化，防注入）"""
-        if role == "sales_manager":
-            return ("AND salesperson_id = %(salesperson_id)s", {"salesperson_id": user_id})
-        return ("", {})
+        """SQL 查询时注入数据范围过滤（委托给 NLQueryService.build_sql_filter）"""
+        return self.nl_query.build_sql_filter(user_id, role)
 
     def _format_context(self, rag_results: list[dict], attr_result: Any, sql_result: Any) -> str:
         """格式化上下文给 LLM 参考"""
@@ -1288,8 +1286,10 @@ def query(
 filter_sql, filter_params = self.build_sql_filter(user_id, role)
 if filter_sql and sql:
     sql = sql.rstrip().rstrip(";") + " " + filter_sql
-# filter_params 合并到现有 params（_execute_query 的 client.execute 调用）
+    params.update(filter_params)  # 将 RBAC 过滤参数合并进 execute_query 的 params
 ```
+
+注意：`params` 是在 `query` 方法内部构造的字典，会被传入 `client.execute(sql, params)` 调用。确保 `params.update(filter_params)` 在该调用之前执行。
 
 **实际修改点**（参考 `nl_query_service.py:77-96`）：
 - 第 77 行 `if not self._validate_sql(sql):` 块之后
