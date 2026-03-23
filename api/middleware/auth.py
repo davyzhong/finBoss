@@ -9,6 +9,10 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/api/v1/ai/health",
     "/feishu/events",
+    "/auth/login",
+    "/auth/callback",
+    "/auth/logout",
+    "/auth/me",
 }
 
 

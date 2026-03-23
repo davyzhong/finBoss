@@ -12,6 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from api.config import get_settings
 from api.error_codes import (
     INTERNAL_ERROR,
+    INVALID_PROVIDER,
     VALIDATION_ERROR,
 )
 from api.exceptions import FinBossError
@@ -25,6 +26,7 @@ from api.routes import (
     ap,
     ar,
     attribution,
+    auth,
     customer360,
     feishu,
     health,
@@ -73,11 +75,20 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handle Starlette HTTP exceptions — pass through original status code."""
     request_id = getattr(request.state, "request_id", "")
+    # Map status codes to appropriate error codes
+    status_code_map = {
+        400: INVALID_PROVIDER if "无效的 state" in exc.detail or "不支持的" in exc.detail else VALIDATION_ERROR,
+        401: "UNAUTHORIZED",
+        403: "FORBIDDEN",
+        404: "NOT_FOUND",
+        422: VALIDATION_ERROR,
+    }
+    error_code = status_code_map.get(exc.status_code, INTERNAL_ERROR)
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "success": False,
-            "error": {"code": INTERNAL_ERROR, "message": exc.detail},
+            "error": {"code": error_code, "message": exc.detail},
             "request_id": request_id,
         },
     )
@@ -170,6 +181,7 @@ def create_app() -> FastAPI:
     app.include_router(salesperson_mapping.router, prefix="/api/v1/salesperson", tags=["业务员映射"])
     app.include_router(ap.router, prefix="/api/v1/ap", tags=["AP管理"])
     app.include_router(quality.router, prefix="/api/v1/quality", tags=["数据质量"])
+    app.include_router(auth.router, prefix="/auth", tags=["认证"])
 
     # 挂载静态文件目录用于报告页面（隔离到 /static/reports 避免与根 /static 冲突）
     from pathlib import Path

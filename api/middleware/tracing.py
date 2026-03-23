@@ -18,6 +18,8 @@ class TracingMiddleware:
         request_id = headers_dict.get("x-request-id") or uuid.uuid4().hex[:16]
 
         # Store in scope state for downstream access
+        if "state" not in scope:
+            scope["state"] = {}
         scope["state"]["request_id"] = request_id
 
         async def send_wrapper(message):
