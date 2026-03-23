@@ -20,7 +20,7 @@
 ### 非目标
 - 多租户（本期为单租户）
 - API Key 长期保留
-- 数据行级权限过滤
+- 数据行级权限过滤（"团队"在权限矩阵中为占位，表示本期不实现行级过滤，销售经理本期只能看到自己负责的数据，后续迭代时再加团队数据隔离逻辑）
 
 ---
 
@@ -173,9 +173,11 @@ ORDER BY (role_id, module);
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
-| GET | `/admin/roles` | 列出所有角色 | 管理员 |
-| GET | `/admin/users` | 列出所有用户 | 管理员 |
-| PUT | `/admin/users/{id}/role` | 修改用户角色 | 管理员 |
+| GET | `/admin/roles` | 列出所有角色 | session + 管理员角色 |
+| GET | `/admin/users` | 列出所有用户 | session + 管理员角色 |
+| PUT | `/admin/users/{id}/role` | 修改用户角色 | session + 管理员角色 |
+
+以上路由均需有效 session（已在白名单中排除），PermissionMiddleware 额外检查 `user.role == "管理员"`。
 
 ---
 
@@ -184,6 +186,23 @@ ORDER BY (role_id, module);
 ### SessionMiddleware
 
 ```python
+# 公开路径（无需认证）
+PUBLIC_PATHS = {
+    "/health", "/ready",
+    "/docs", "/redoc", "/openapi.json",
+    "/auth/login", "/auth/callback",
+    "/api/v1/ai/health",
+    "/feishu/events",
+}
+
+
+def requires_auth(path: str) -> bool:
+    """判断路径是否需要认证（不在白名单中即为需要认证）。"""
+    return not any(
+        path == p or path.startswith(p + "/") for p in PUBLIC_PATHS
+    )
+
+
 class SessionMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -204,13 +223,15 @@ class SessionMiddleware:
                 del session_store[session_id]
                 session_id = None
 
-        # 若无 session 且路径需要认证 → 重定向到登录
+        # 若无 session 且路径需要认证 → 重定向到统一登录页
         if not session_id and requires_auth(scope["path"]):
-            await redirect_to_login(scope, receive, send, provider="feishu")
+            await redirect_to_login(scope, receive, send)
             return
 
         await self.app(scope, receive, send)
 ```
+
+重定向到 `/auth/login`（不带 provider 参数时显示提供商选择页）。
 
 ### PermissionMiddleware
 
@@ -261,16 +282,14 @@ GET https://open.feishu.cn/open-apis/authen/v1/authorize
   ?app_id=CLI_xxx
   &redirect_uri=https://finboss.example.com/auth/callback
   &scope=contact:user.avatar:readonly contact:user.email:readonly
-  &state=随机 CSRF token
+  &state={csrf_token}
 
 回调处理:
-POST https://open.feishu.cn/open-apis/authen/v1/oidc/access_token
-  Authorization: Basic base64(app_id:app_secret)
-  Body: grant_type=authorization_code&code=回调code
+1. 验证 `state` 参数是否与 SessionMiddleware 预存的 token 匹配（防 CSRF）
+2. 用 `code` 换取 `access_token`
+3. 用 `access_token` 获取用户信息
 
-获取用户信息:
-GET https://open.feishu.cn/open-apis/authen/v1/user_info
-  Authorization: Bearer {access_token}
+**CSRF 防护**: `/auth/login` 生成随机 `state` token，存入 session（`oauth_state`），回调时比对，不匹配则拒绝。
 ```
 
 ### 钉钉 OAuth
@@ -334,6 +353,8 @@ class SessionStore:
         session = self.session_store.get(session_id)
         if session and session["expires_at"] > datetime.utcnow():
             return session
+        # 被动清理：过期 session 被访问时删除（节省内存）
+        self.session_store.pop(session_id, None)
         return None
 
     def delete(self, session_id: str) -> None:
@@ -380,6 +401,7 @@ class SessionStore:
 ## 10. 注意事项
 
 - Session 为进程内存储，多 uvicorn worker 共享同一内存（单进程）；如需多进程部署，需切换到 Redis
+- Session 过期清理为被动模式（`get()` 时删除过期项），大量过期未访问的 session 会轻微占用内存；8小时 TTL 下可接受
 - API Key 在 Phase 8 上线后立即失效，所有客户端需迁移到 session cookie 方式
 - 钉钉/企微的 OAuth scope 需在对应开放平台申请并审核
 - 飞书用户 union_id 在同一企业内唯一，跨企业需额外处理
