@@ -18,7 +18,9 @@ from api.error_codes import (
 from api.exceptions import FinBossError
 from api.logging import JSONFormatter
 from api.middleware.auth import AuthMiddleware
+from api.middleware.permission import PermissionMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
+from api.middleware.session import SessionMiddleware
 from api.middleware.tracing import TracingMiddleware
 from api.routes import (
     admin,
@@ -162,6 +164,10 @@ def create_app() -> FastAPI:
         RateLimitMiddleware,
         limit=settings.api_key.rate_limit,
     )
+
+    # Phase 8: Session + Permission middlewares (LIFO: Session runs before Permission on request)
+    app.add_middleware(PermissionMiddleware)  # runs second (checks permissions after session injects user)
+    app.add_middleware(SessionMiddleware)      # runs first (parses cookie, injects request.state.user)
 
     # Configure JSON logging for uvicorn
     for logger_name in ["uvicorn", "uvicorn.access", "uvicorn.error"]:

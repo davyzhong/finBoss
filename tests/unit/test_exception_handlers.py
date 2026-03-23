@@ -1,5 +1,7 @@
-import pytest
 import os
+from unittest.mock import patch
+
+import pytest
 
 # Import create_app and get_settings (not app) so fixture can create the app with test env
 from api.main import create_app
@@ -37,7 +39,17 @@ def setup_test_api_keys():
         fn.cache_clear()
     # Create a fresh app with the test API keys
     app = create_app()
+
+    # Bypass SessionMiddleware so test requests (no session cookie) don't redirect to /auth/login
+    async def mock_session_middleware_call(self, scope, receive, send):
+        await self.app(scope, receive, send)
+
+    session_mw_patch = patch(
+        "api.middleware.session.SessionMiddleware.__call__", mock_session_middleware_call
+    )
+    session_mw_patch.start()
     yield app
+    session_mw_patch.stop()
     # Cleanup
     for fn in (
         get_clickhouse_service,

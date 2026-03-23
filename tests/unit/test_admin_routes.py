@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 @pytest.fixture
 def test_app():
-    """Create app and patch AuthMiddleware to allow test requests through."""
+    """Create app and patch AuthMiddleware and SessionMiddleware to allow test requests through."""
     from api.main import create_app
 
     app = create_app()
@@ -18,15 +18,24 @@ def test_app():
         scope["state"]["user"] = {"user_id": "u_test", "role": "admin", "name": "Test Admin"}
         await self.app(scope, receive, send)
 
-    # Apply middleware patch before any requests
+    async def mock_session_middleware_call(self, scope, receive, send):
+        """Bypass session validation so tests don't redirect to /auth/login."""
+        await self.app(scope, receive, send)
+
+    # Apply middleware patches before any requests
     admin_mw_patch = patch(
         "api.middleware.auth.AuthMiddleware.__call__", mock_auth_middleware_call
     )
+    session_mw_patch = patch(
+        "api.middleware.session.SessionMiddleware.__call__", mock_session_middleware_call
+    )
     admin_mw_patch.start()
+    session_mw_patch.start()
     try:
         yield app
     finally:
         admin_mw_patch.stop()
+        session_mw_patch.stop()
 
 
 @pytest.fixture
@@ -134,10 +143,17 @@ async def test_require_admin_raises_403_for_non_admin(test_app):
         scope["state"]["user"] = {"user_id": "u999", "role": "finance"}
         await self.app(scope, receive, send)
 
+    async def mock_session_non_admin(self, scope, receive, send):
+        await self.app(scope, receive, send)
+
     non_admin_patch = patch(
         "api.middleware.auth.AuthMiddleware.__call__", mock_auth_non_admin
     )
+    session_patch = patch(
+        "api.middleware.session.SessionMiddleware.__call__", mock_session_non_admin
+    )
     non_admin_patch.start()
+    session_patch.start()
     try:
         async with AsyncClient(
             transport=ASGITransport(app=test_app),
@@ -146,6 +162,7 @@ async def test_require_admin_raises_403_for_non_admin(test_app):
             resp = await ac.get("/admin/users")
     finally:
         non_admin_patch.stop()
+        session_patch.stop()
 
     assert resp.status_code == 403
     data = resp.json()
@@ -162,10 +179,17 @@ async def test_require_admin_raises_401_when_no_user(test_app):
         # Do NOT set scope["state"]["user"]
         await self.app(scope, receive, send)
 
+    async def mock_session_no_user(self, scope, receive, send):
+        await self.app(scope, receive, send)
+
     no_user_patch = patch(
         "api.middleware.auth.AuthMiddleware.__call__", mock_auth_no_user
     )
+    session_patch = patch(
+        "api.middleware.session.SessionMiddleware.__call__", mock_session_no_user
+    )
     no_user_patch.start()
+    session_patch.start()
     try:
         async with AsyncClient(
             transport=ASGITransport(app=test_app),
@@ -174,6 +198,7 @@ async def test_require_admin_raises_401_when_no_user(test_app):
             resp = await ac.get("/admin/users")
     finally:
         no_user_patch.stop()
+        session_patch.stop()
 
     assert resp.status_code == 401
     data = resp.json()
