@@ -17,6 +17,7 @@ from api.dependencies import (
     get_quality_service,
     get_rag_service,
 )
+from services.session_service import session_store
 from schemas.dm.ar import DMARSummary
 from schemas.std.ar import StdARRecord
 
@@ -39,6 +40,7 @@ def clear_service_caches():
         get_alert_service,
     ):
         fn.cache_clear()
+    session_store.clear()
     yield
     for fn in (
         get_clickhouse_service,
@@ -49,6 +51,7 @@ def clear_service_caches():
         get_alert_service,
     ):
         fn.cache_clear()
+    session_store.clear()
 
 
 @pytest.fixture

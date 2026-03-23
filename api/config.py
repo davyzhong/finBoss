@@ -305,7 +305,7 @@ class FeishuOAuthConfig(BaseSettings):
     """飞书 OAuth 配置"""
 
     model_config = SettingsConfigDict(
-        env_prefix="feishu_",
+        env_prefix="feishu_oauth_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
