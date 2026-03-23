@@ -1,6 +1,6 @@
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-PUBLIC_PATHS = {
+PUBLIC_PATHS = frozenset({
     "/health",
     "/ready",
     "/docs",
@@ -10,7 +10,7 @@ PUBLIC_PATHS = {
     "/auth/callback",
     "/api/v1/ai/health",
     "/feishu/events",
-}
+})
 
 
 def requires_auth(path: str) -> bool:

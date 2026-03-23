@@ -41,6 +41,12 @@ class TestRequiresAuth:
     def test_requires_auth_public_path_ready(self):
         assert requires_auth("/ready") is False
 
+    def test_requires_auth_sub_path_under_public(self):
+        """Sub-path under a public path should also be public."""
+        # /auth/login/anything should match /auth/login
+        assert requires_auth("/auth/login/evil") is False
+        assert requires_auth("/docs/something") is False
+
 
 class TestSessionMiddleware:
     @pytest.fixture
