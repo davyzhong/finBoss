@@ -1,0 +1,95 @@
+name: 📸 README Screenshots
+
+# finBoss 截图自动化 — readme-craft v2.2 T18 铁律
+#
+# 触发：
+#   1. 手动触发（workflow_dispatch）
+#   2. 每天 UTC 凌晨自动跑（schedule）— 防止代码改了但截图没更新
+#   3. README.md / 截图脚本 / workflow 自身变化时自动跑（push paths）
+#
+# 自动 commit 用 github-actions[bot] 身份，会触发新一轮 push（已通过
+# push paths 限制避免递归触发）
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *' # 每天 0 点（UTC）
+  push:
+    paths:
+      - 'README.md'
+      - 'README.en.md'
+      - 'README.zh.md'
+      - 'scripts/screenshot.js'
+      - '.github/workflows/screenshot.yml'
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: ⏬ 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🔧 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 安装依赖
+        run: npm install
+
+      - name: 🎭 安装 Playwright 浏览器
+        run: npx playwright install --with-deps chromium
+
+      - name: 📸 跑截图脚本
+        run: npm run screenshot
+
+      - name: 🔍 检测变化
+        id: check-changes
+        run: |
+          if [ -n "$(git status --porcelain assets/screenshots/*.png 2>/dev/null)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "⚠️ 检测到截图变化，将自动 commit"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "✅ 截图无变化（README 与截图同步）"
+          fi
+
+      - name: 💾 自动 commit 截图
+        if: steps.check-changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add assets/screenshots/*.png
+          git commit -m "📸 auto: 自动更新 README 截图（GitHub Action）
+
+          触发：\${{ github.workflow }} (\${{ github.event_name }})
+          commit: \${{ github.sha }}
+
+          CI 自动化截图脚本：scripts/screenshot.js" || true
+          git push origin HEAD:"${{ github.ref_name }}"
+
+      - name: 🚨 PR 评论（如果有人提 PR 触发）
+        if: steps.check-changes.outputs.changed == 'true' && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: '📸 截图更新'
+          message: |
+            🤖 **README 截图与代码不同步**
+
+            截图脚本检测到界面变化，请检查下列文件：
+            \$( git diff --name-only HEAD~1 HEAD | head -20 )
+
+            如需手动更新：
+            ```bash
+            npm install
+            npx playwright install chromium
+            npm run screenshot
+            git add assets/screenshots/*.png
+            git commit -m "docs(assets): 更新截图"
+            ```

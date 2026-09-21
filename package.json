@@ -1,0 +1,16 @@
+{
+  "name": "finboss-screenshots",
+  "version": "1.0.0",
+  "private": true,
+  "description": "finBoss README 截图自动化 — readme-craft v2.2 T18",
+  "scripts": {
+    "screenshot": "node scripts/screenshot.js",
+    "screenshot:install": "npx playwright install chromium"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
