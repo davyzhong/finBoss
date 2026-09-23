@@ -459,8 +459,8 @@ uv run mypy services api           # 类型检查
 - [Phase 1 测试报告](docs/TEST_REPORT.md)
 - [Phase 2 测试报告](docs/TEST_REPORT_PHASE2.md)
 - [Phase 2 实施计划](docs/superpowers/plans/2026-03-20-finboss-phase2-plan.md)
-- [Phase 8 SSO/RBAC 计划](docs/superpowers/plans/2026-03-23-finboss-phase8-sso-rbac.md)
-- [Phase 9 计划](docs/superpowers/plans/2026-03-24-finboss-phase9-plan.md)
+- [Phase 8 SSO/RBAC 计划](docs/superpowers/plans/)
+- [Phase 9 计划](docs/superpowers/plans/)
 
 ## 🤖 Built by
 
