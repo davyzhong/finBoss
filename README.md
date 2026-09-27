@@ -31,6 +31,8 @@ tags:
 
 `[数据接入 → 质量规则 → 财务建模 → AI 自然语言查询 → 飞书机器人]`
 
+**Languages / 语言**: 简体中文（默认，面向企业内部中文财务团队）。英文版暂未提供，欢迎 PR 补充 `README.en.md`。
+
 ![项目阶段进度标记](https://img.shields.io/badge/Phase-4%2F9-blue.svg)
 ![Python 版本](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![FastAPI 框架](https://img.shields.io/badge/FastAPI-0.109%2B-009688?logo=fastapi&logoColor=white)

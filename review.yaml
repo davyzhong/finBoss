@@ -1,0 +1,99 @@
+# FinBoss README 的 agent-reviewed 规则评审
+#
+# 评审对象：./README.md（505 行，version 0.1.0）
+# 评审时间：2026-09-27
+# 项目类型：cli（企业财务 AI 工作台，含 CLI + 服务形态）
+# 用法：pnpm readme-craft check . --type cli --review review.yaml
+#
+# 说明：本仓库 License 为 Proprietary 且 README 已声明使用授权需联系维护者，
+# 无外部公开客户可引用，T11 按 N/A 处理。
+
+specVersion: 3.0.0-alpha.0
+
+reviews:
+  # T01 视觉锤
+  - id: T01
+    score: 4
+    reason: >-
+      居中主标题「💰 FinBoss」、中英双语副标题与 badge 矩阵齐备；
+      「解决什么问题」章节紧随其后，首屏即传达定位而非空留白。
+      扣 1 分：无 hero 视觉资产（无产品截图或架构示意图），
+      纯文字首屏对陌生读者的视觉吸引力有限。
+    evidence: [logo-tagline]
+
+  # T02 三秒价值主张
+  - id: T02
+    score: 5
+    reason: >-
+      第 50 行首句即点明三类具体痛点（金蝶/银行拉数困难、业务-财务对账口径不一致、
+      临时分析响应慢），第 52-55 行用四层结构说明解决路径，第 57 行给出完成度
+      （Phase 1-4 已完成 / 5-9 规划中），第 59 行诚实声明 Proprietary 授权边界。
+      做什么、给谁用、独特优势（数据不出内网 + 财务领域深度）三要素完整且有边界说明。
+    evidence: [value-proposition]
+
+  # T04 安装路径
+  - id: T04
+    score: 4
+    reason: >-
+      「五路启动方式」提供 Docker Compose 一键启动、本机 API 启动等多条路径，
+      含 git clone 与环境准备步骤，命令可直接复制。
+      扣 1 分：Proprietary 项目无公开分发渠道，安装路径实际只对获授权者有效，
+      README 未在启动章节重申这一前提。
+    evidence: [executable-command, supported-platforms]
+
+  # T05 Quickstart
+  - id: T05
+    score: 4
+    reason: >-
+      快速开始章节给出分层启动步骤，并有「API 文档」章节提供可直接调用的接口说明，
+      读者启动后可立即验证。
+      扣 1 分：作为服务类项目缺少一键体验入口（无公开 Demo、无 Codespaces），
+      首次验证需完整拉起 ClickHouse + Milvus + Ollama 依赖链。
+    evidence: [quickstart-steps]
+
+  # T07 卖点编号
+  - id: T07
+    score: 5
+    reason: >-
+      核心卖点章节 7 条，每条都是「粗体关键词 + 一行具体收益」结构：
+      本地推理（数据不出内网）、自然语言查询（给出具体接口与示例问句）、
+      RAG（明确 17 条知识）、三层数据契约、飞书集成、归因分析（客户×时间交叉）、
+      SQL 安全（明确列出三类注入已修复）。多数条目带可核验的数字或接口路径，
+      无空泛形容词。
+    evidence: [numbered-selling-points, quantified-benefit]
+
+  # T08 Feature 分组
+  - id: T08
+    score: 5
+    reason: >-
+      第 52-55 行按「数据接入层 / 数据建模层 / 业务服务层 / AI 能力层」四层分组，
+      与架构章节的 mermaid 分层一致；另有「功能分组」章节按能力域组织，
+      分组维度与系统结构对应，读者可按层或按能力两种方式检索。
+    evidence: [feature-groups]
+
+  # T11 引用/背书
+  - id: T11
+    status: na
+    reason: >-
+      License 为 Proprietary，README 第 59 行明确「使用与分发授权请向维护者确认」，
+      无可公开引用的外部客户。伪造客户 logo 或用户 quote 会违反本项目 T11 的
+      反虚假约束，因此按 N/A 处理而非扣分。
+
+  # T14 包容性语言
+  - id: T14
+    score: 4
+    reason: >-
+      全文使用「财务团队」「用户」「客户」等中性称谓，无 he/she 默认指代，
+      无性别化或地域化表述；技术名词（Ollama / RAG / AST）均附用途说明。
+      扣 1 分：面向财务从业者，术语密度较高（raw/std/dm、Pydantic schema、
+      sqlglot AST），对非技术财务读者仍有门槛。
+    evidence: [inclusive-language-review]
+
+  # T17 默认语言策略
+  - id: T17
+    score: 4
+    reason: >-
+      首屏显式声明默认语言为简体中文并说明面向企业内部中文财务团队，
+      英文版欢迎 PR 补充 README.en.md，策略明确且与 Proprietary 定位一致。
+      扣 1 分：策略仅在首屏一处提及，未在贡献章节重复。
+    evidence: [default-language-rationale]
