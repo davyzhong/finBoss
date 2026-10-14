@@ -48,3 +48,4 @@ secrets.yaml
 
 # Phase 6: runtime report output
 static/reports/
+node_modules/
